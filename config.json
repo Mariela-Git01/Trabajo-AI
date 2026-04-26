@@ -1,44 +1,46 @@
 {
-  "_descripcion": "Configuración real — Vivienda familiar 1 piso, Cajamarca, Perú",
+  "_descripcion": "Configuración — Vivienda de Alquiler, 3 pisos, Cajamarca, Perú — Año 2025",
 
   "edificio": {
-    "nombre": "Vivienda Familiar — Cajamarca",
-    "tipo": "Vivienda unifamiliar",
+    "nombre": "Vivienda de Alquiler — 3 Pisos",
+    "tipo": "Vivienda de alquiler",
     "ciudad": "Cajamarca",
     "departamento": "Cajamarca",
-    "pisos": 1,
-    "apartamentos": 1,
-    "consumo_mensual_real_m3": 17,
-    "consumo_mensual_real_litros": 17000
+    "pisos": 3,
+    "apartamentos": 3,
+    "consumo_anual_real_m3": 245,
+    "consumo_anual_real_litros": 245000,
+    "anio": 2025
   },
 
   "umbrales": {
     "factor_anomalia": 1.5,
-    "consumo_bajo_litros": 400,
-    "consumo_alto_litros": 700,
+    "consumo_bajo_litros": 5000,
+    "consumo_alto_litros": 25000,
     "litros_por_persona_dia": 150,
-    "_nota": "OMS recomienda min 50 L/persona/día. Perú promedio doméstico: 150–200 L/persona/día"
+    "_nota": "Umbrales adaptados a datos mensuales. OMS: 50 L/pers/día. Perú urbano: 150–200 L/pers/día"
   },
 
   "prediccion": {
-    "dias_futuros": 7,
+    "dias_futuros": 3,
+    "_nota": "Meses futuros a predecir (Enero–Marzo 2026)",
     "grado_polinomio": 3
   },
 
   "clustering": {
     "num_clusters": 3,
-    "_nota": "3 clusters: días de semana normales, fines de semana, días anómalos"
+    "_nota": "3 clusters: meses de bajo consumo, consumo medio, meses pico"
   },
 
   "red_neuronal": {
-    "epocas": 500,
+    "epocas": 800,
     "neuronas_capa1": 64,
     "neuronas_capa2": 32
   },
 
   "alertas": {
-    "fuga_nocturna_umbral_litros": 30,
-    "_nota": "En madrugada (00–06h) no debería superarse 30 L en una vivienda normal de Cajamarca"
+    "fuga_nocturna_umbral_litros": 800,
+    "_nota": "En madrugada mensual no debería superar 800 L en vivienda de alquiler normal"
   },
 
   "tarifa": {
@@ -52,7 +54,7 @@
       { "desde_m3": 20, "hasta_m3": 999, "precio_sol_por_m3": 3.120,
         "_detalle": "Consumo doméstico excedente" }
     ],
-    "_nota": "Tarifa doméstica SEDACAJ vigente. 17 m³ cae en tramos 0-8 y 8-20"
+    "_nota": "Tarifa doméstica SEDACAJ vigente. El consumo anual de 245 m³ entra principalmente en el tramo excedente."
   },
 
   "graficos": {
