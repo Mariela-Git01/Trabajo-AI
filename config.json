@@ -1,0 +1,62 @@
+{
+  "_descripcion": "Configuración real — Vivienda familiar 1 piso, Cajamarca, Perú",
+
+  "edificio": {
+    "nombre": "Vivienda Familiar — Cajamarca",
+    "tipo": "Vivienda unifamiliar",
+    "ciudad": "Cajamarca",
+    "departamento": "Cajamarca",
+    "pisos": 1,
+    "apartamentos": 1,
+    "consumo_mensual_real_m3": 17,
+    "consumo_mensual_real_litros": 17000
+  },
+
+  "umbrales": {
+    "factor_anomalia": 1.5,
+    "consumo_bajo_litros": 400,
+    "consumo_alto_litros": 700,
+    "litros_por_persona_dia": 150,
+    "_nota": "OMS recomienda min 50 L/persona/día. Perú promedio doméstico: 150–200 L/persona/día"
+  },
+
+  "prediccion": {
+    "dias_futuros": 7,
+    "grado_polinomio": 3
+  },
+
+  "clustering": {
+    "num_clusters": 3,
+    "_nota": "3 clusters: días de semana normales, fines de semana, días anómalos"
+  },
+
+  "red_neuronal": {
+    "epocas": 500,
+    "neuronas_capa1": 64,
+    "neuronas_capa2": 32
+  },
+
+  "alertas": {
+    "fuga_nocturna_umbral_litros": 30,
+    "_nota": "En madrugada (00–06h) no debería superarse 30 L en una vivienda normal de Cajamarca"
+  },
+
+  "tarifa": {
+    "proveedor": "SEDACAJ — Cajamarca",
+    "cargo_fijo_soles": 3.20,
+    "rangos": [
+      { "desde_m3": 0,  "hasta_m3": 8,   "precio_sol_por_m3": 0.880,
+        "_detalle": "Consumo mínimo social" },
+      { "desde_m3": 8,  "hasta_m3": 20,  "precio_sol_por_m3": 1.650,
+        "_detalle": "Consumo doméstico básico" },
+      { "desde_m3": 20, "hasta_m3": 999, "precio_sol_por_m3": 3.120,
+        "_detalle": "Consumo doméstico excedente" }
+    ],
+    "_nota": "Tarifa doméstica SEDACAJ vigente. 17 m³ cae en tramos 0-8 y 8-20"
+  },
+
+  "graficos": {
+    "guardar_png": true,
+    "nombre_archivo": "grafico_consumo_agua.png"
+  }
+}
