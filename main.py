@@ -12,7 +12,6 @@ import json
 import numpy as np
 import matplotlib.pyplot as plt
 import matplotlib.patches as mpatches
-import matplotlib.gridspec as gridspec
 import warnings
 warnings.filterwarnings("ignore")
 
@@ -392,7 +391,7 @@ def generar_recomendaciones(stats, clasificacion, anomalias_if, fugas,
     return recs
 
 # =============================================================================
-# 10. VISUALIZACIÓN — 4 paneles integrados (análisis anual)
+# 10. VISUALIZACIÓN — 2 gráficos simples para cualquier público
 # =============================================================================
 
 def visualizar_completo(indices, consumo, stats, umbral, anomalias_umbral,
@@ -400,169 +399,159 @@ def visualizar_completo(indices, consumo, stats, umbral, anomalias_umbral,
                         idx_pred_poly, vals_pred_poly,
                         idx_pred_nn, vals_pred_nn,
                         config, costos_mes):
+    """
+    Genera 2 gráficos claros y fáciles de entender para cualquier persona,
+    sin términos técnicos ni datos confusos.
 
-    bajo      = config["umbrales"]["consumo_bajo_litros"]
-    alto      = config["umbrales"]["consumo_alto_litros"]
-    nombre    = config["edificio"]["nombre"]
-    ciudad    = config["edificio"]["ciudad"]
-    anio      = config["edificio"]["anio"]
-    total_m3  = config["edificio"]["consumo_anual_real_m3"]
-    costo_t   = sum(costos_mes)
-    franjas   = ["Madrugada\n00–06h", "Mañana\n06–12h",
-                 "Tarde\n12–18h",     "Noche\n18–24h"]
+    Gráfico 1 — Barras de consumo mensual:
+      Muestra cuánta agua se usó cada mes, con colores simples
+      (verde = poco, naranja = mucho) y el valor exacto encima de cada barra.
 
-    # Abreviaciones de meses para ejes
+    Gráfico 2 — Estimación de los próximos 3 meses:
+      Continúa la línea del año 2025 y muestra qué se espera consumir
+      en enero, febrero y marzo de 2026.
+    """
     meses_abr = ["Ene", "Feb", "Mar", "Abr", "May", "Jun",
                  "Jul", "Ago", "Set", "Oct", "Nov", "Dic"]
-    meses_fut = [f"M{i}" for i in idx_pred_poly]
-
-    fig = plt.figure(figsize=(18, 14))
-    fig.suptitle(
-        f"Sistema de Optimización del Uso de Agua — {nombre}  |  {ciudad}, Perú  |  Año {anio}\n"
-        f"Consumo anual: {total_m3} m³  •  "
-        f"Promedio mensual: {stats['promedio']:,.0f} L/mes  •  "
-        f"Costo anual estimado SEDACAJ: S/. {costo_t:.2f}",
-        fontsize=12, fontweight="bold", y=0.99
-    )
-    gs = gridspec.GridSpec(2, 2, figure=fig, hspace=0.44, wspace=0.33)
-
+    meses_fut_abr = ["Ene 26", "Feb 26", "Mar 26"]
+    nombre   = config["edificio"]["nombre"]
+    ciudad   = config["edificio"]["ciudad"]
+    anio     = config["edificio"]["anio"]
+    costo_t  = sum(costos_mes)
     meses_if = {m for m, _, _ in anomalias_if}
 
-    # ------------------------------------------------------------------
-    # PANEL 1 — Consumo mensual + anomalías + predicciones
-    # ------------------------------------------------------------------
-    ax1 = fig.add_subplot(gs[0, 0])
-
-    colores = []
-    for i, v in enumerate(consumo):
-        if meses[i] in meses_if:   colores.append("#e74c3c")
-        elif v >= alto:             colores.append("#e67e22")
-        elif v < bajo:              colores.append("#2ecc71")
-        else:                       colores.append("#3498db")
-
-    barras = ax1.bar(indices, consumo, color=colores, alpha=0.85, zorder=2,
-                     tick_label=meses_abr)
-    ax1.axhline(stats["promedio"], color="#2c3e50", linestyle="--",
-                lw=1.7, label=f"Promedio: {stats['promedio']:,.0f} L", zorder=3)
-    ax1.axhline(umbral, color="#c0392b", linestyle=":",
-                lw=1.4,
-                label=f"Umbral ×{config['umbrales']['factor_anomalia']}: {umbral:,.0f} L",
-                zorder=3)
-
-    for mes_n, valor, _ in anomalias_if:
-        idx_a = meses.index(mes_n) + 1
-        ax1.annotate(f"⚠{valor//1000}k",
-                     xy=(idx_a, valor),
-                     xytext=(idx_a, valor + stats["promedio"] * 0.12),
-                     ha="center", fontsize=7.5, color="#c0392b", fontweight="bold",
-                     arrowprops=dict(arrowstyle="->", color="#c0392b", lw=1))
-
-    ax1.plot(idx_pred_poly, vals_pred_poly, "s--", color="#8e44ad",
-             lw=1.8, markersize=6, label="Predicción Polinómica 2026")
-    ax1.plot(idx_pred_nn, vals_pred_nn, "D--", color="#16a085",
-             lw=1.8, markersize=6, label="Predicción Red Neuronal 2026")
-
-    p_an = mpatches.Patch(color="#e74c3c", label="Anomalía (IF)")
-    p_al = mpatches.Patch(color="#e67e22", label=f"Alto (≥{alto//1000}k L)")
-    p_nm = mpatches.Patch(color="#3498db", label="Normal")
-    p_bj = mpatches.Patch(color="#2ecc71", label=f"Bajo (<{bajo//1000}k L)")
-    hdls, _ = ax1.get_legend_handles_labels()
-    ax1.legend(handles=hdls + [p_an, p_al, p_nm, p_bj],
-               fontsize=7, ncol=2, loc="upper left")
-    ax1.set_title("Consumo Mensual 2025 + Anomalías + Predicciones 2026",
-                  fontweight="bold")
-    ax1.set_xlabel("Mes")
-    ax1.set_ylabel("Litros / mes")
-    ax1.yaxis.set_major_formatter(
-        plt.FuncFormatter(lambda x, _: f"{x/1000:.0f}k")
+    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(16, 7))
+    fig.suptitle(
+        f"{nombre}  —  {ciudad}, Perú  |  Año {anio}\n"
+        f"Agua consumida en el año: {stats['total_m3']:.0f} m³  "
+        f"(equivale a {stats['total_m3']*1000:,.0f} litros)  •  "
+        f"Costo anual estimado: S/. {costo_t:.2f}",
+        fontsize=12, fontweight="bold"
     )
-    ax1.grid(axis="y", alpha=0.3)
-    ax1.set_ylim(0, max(consumo) * 1.30)
 
     # ------------------------------------------------------------------
-    # PANEL 2 — Heatmap por franja horaria (mensual)
+    # GRÁFICO 1 — ¿Cuánta agua se usó cada mes?
     # ------------------------------------------------------------------
-    ax2 = fig.add_subplot(gs[0, 1])
-    matriz = np.array(consumo_horario_mes).T   # (4 franjas × 12 meses)
-
-    im = ax2.imshow(matriz, aspect="auto", cmap="YlOrRd",
-                    extent=[0.5, 12.5, 3.5, -0.5])
-    cbar = plt.colorbar(im, ax=ax2)
-    cbar.set_label("Litros por franja (mensual)", fontsize=9)
-    ax2.set_yticks([0, 1, 2, 3])
-    ax2.set_yticklabels(franjas, fontsize=8)
-    ax2.set_xticks(range(1, 13))
-    ax2.set_xticklabels(meses_abr, fontsize=8)
-    ax2.set_xlabel("Mes")
-    ax2.set_title("Distribución por Franja Horaria — Año 2025 (Heatmap)",
-                  fontweight="bold")
-
-    for mes_n in meses_if:
-        idx_a = meses.index(mes_n) + 1
-        ax2.axvline(x=idx_a, color="#e74c3c", lw=1.8, alpha=0.75, linestyle="--")
-
-    # ------------------------------------------------------------------
-    # PANEL 3 — Clustering K-Means
-    # ------------------------------------------------------------------
-    ax3 = fig.add_subplot(gs[1, 0])
-    etiq      = cluster_info["etiquetas"]
-    nombres_c = cluster_info["nombres"]
-    colores_c = ["#2ecc71", "#3498db", "#e74c3c", "#f39c12"]
-
-    for i, (idx, val) in enumerate(zip(indices, consumo)):
-        lbl = etiq[i]
-        ax3.scatter(idx, val,
-                    color=colores_c[lbl % len(colores_c)],
-                    s=90, zorder=3, edgecolors="white", linewidths=0.8)
-        ax3.annotate(meses_abr[i], (idx, val),
-                     textcoords="offset points", xytext=(0, 7),
-                     ha="center", fontsize=7.5, color="#2c3e50")
-
-    ax3.axhline(stats["promedio"], color="#2c3e50", linestyle="--",
-                lw=1.2, alpha=0.5, label=f"Promedio {stats['promedio']:,.0f} L")
-    handles_c = [
-        mpatches.Patch(color=colores_c[k % len(colores_c)],
-                       label=f"Cluster {k}: {nombres_c.get(k, f'Grupo {k}')}")
-        for k in sorted(set(etiq))
+    # Color: verde si está por debajo del promedio, naranja si está por encima
+    colores = [
+        "#e74c3c" if mes_n in meses_if           # rojo = mes inusual
+        else "#e67e22" if v > stats["promedio"]  # naranja = más de lo normal
+        else "#2ecc71"                            # verde = dentro de lo normal
+        for mes_n, v in zip(meses, consumo)
     ]
-    ax3.legend(handles=handles_c, fontsize=8, loc="upper left")
-    ax3.set_title("Clustering K-Means — Patrones Mensuales de Consumo",
-                  fontweight="bold")
-    ax3.set_xlabel("Mes")
-    ax3.set_ylabel("Litros / mes")
-    ax3.yaxis.set_major_formatter(
-        plt.FuncFormatter(lambda x, _: f"{x/1000:.0f}k")
+
+    barras = ax1.bar(meses_abr, consumo, color=colores,
+                     edgecolor="white", linewidth=0.8, zorder=2)
+
+    # Valor en litros encima de cada barra (redondeado, fácil de leer)
+    for barra, valor, mes_n in zip(barras, consumo, meses):
+        etiqueta = f"{valor//1000}k L"  # ej: "49k L"
+        color_txt = "#c0392b" if mes_n in meses_if else "#2c3e50"
+        ax1.text(
+            barra.get_x() + barra.get_width() / 2,
+            barra.get_height() + max(consumo) * 0.015,
+            etiqueta,
+            ha="center", va="bottom",
+            fontsize=9, fontweight="bold", color=color_txt
+        )
+        # Señalar meses inusuales con una etiqueta de alerta
+        if mes_n in meses_if:
+            ax1.text(
+                barra.get_x() + barra.get_width() / 2,
+                barra.get_height() + max(consumo) * 0.085,
+                "⚠ Mes inusual",
+                ha="center", va="bottom",
+                fontsize=7.5, color="#c0392b", fontstyle="italic"
+            )
+
+    # Línea del promedio anual
+    ax1.axhline(
+        stats["promedio"], color="#2c3e50",
+        linestyle="--", lw=1.8, zorder=3,
+        label=f"Promedio del año: {stats['promedio']:,.0f} L/mes"
     )
-    ax3.grid(alpha=0.3)
-    ax3.set_ylim(0, max(consumo) * 1.25)
-    ax3.set_xticks(indices)
-    ax3.set_xticklabels(meses_abr, fontsize=8)
+
+    # Leyenda con texto simple
+    leyenda = [
+        mpatches.Patch(color="#2ecc71", label="Consumo normal (por debajo del promedio)"),
+        mpatches.Patch(color="#e67e22", label="Consumo alto (por encima del promedio)"),
+        mpatches.Patch(color="#e74c3c", label="Mes inusual — revisar posibles fugas"),
+    ]
+    ax1.legend(handles=leyenda, fontsize=8.5, loc="upper left",
+               framealpha=0.9)
+
+    ax1.set_title("¿Cuánta agua se usó cada mes?",
+                  fontsize=13, fontweight="bold", pad=12)
+    ax1.set_xlabel("Mes del año", fontsize=10)
+    ax1.set_ylabel("Litros de agua usados", fontsize=10)
+    ax1.yaxis.set_major_formatter(
+        plt.FuncFormatter(lambda x, _: f"{int(x/1000)}k")
+    )
+    ax1.set_ylim(0, max(consumo) * 1.28)
+    ax1.grid(axis="y", alpha=0.25, linestyle=":")
+    ax1.set_axisbelow(True)
 
     # ------------------------------------------------------------------
-    # PANEL 4 — Comparación de predicciones (polinom. vs. red neuronal)
+    # GRÁFICO 2 — ¿Cuánta agua se usará los próximos meses?
     # ------------------------------------------------------------------
-    ax4 = fig.add_subplot(gs[1, 1])
-    ax4.plot(indices, consumo, "o-", color="#7f8c8d",
-             lw=1.5, markersize=5, label="Consumo real 2025", alpha=0.8)
-    ax4.plot(idx_pred_poly, vals_pred_poly, "s--", color="#8e44ad",
-             lw=2, markersize=7, label="Regresión Polinómica (2026)")
-    ax4.plot(idx_pred_nn, vals_pred_nn, "D--", color="#16a085",
-             lw=2, markersize=7, label="Red Neuronal MLP (2026)")
-    ax4.axhline(stats["promedio"], color="#2c3e50", linestyle=":",
-                lw=1.2, alpha=0.5, label=f"Promedio {stats['promedio']:,.0f} L")
-    ax4.axvspan(12.5, max(idx_pred_poly) + 0.5,
-                alpha=0.07, color="purple", label="Zona predicción 2026")
-    ax4.set_title("Predicción: Polinómica vs Red Neuronal (próx. 3 meses)",
-                  fontweight="bold")
-    ax4.set_xlabel("Mes (1–12 = 2025 | 13–15 = ene–mar 2026)")
-    ax4.set_ylabel("Litros / mes")
-    ax4.yaxis.set_major_formatter(
-        plt.FuncFormatter(lambda x, _: f"{x/1000:.0f}k")
-    )
-    ax4.legend(fontsize=8)
-    ax4.grid(alpha=0.3)
+    # Historial 2025
+    ax2.plot(meses_abr, consumo, "o-",
+             color="#3498db", lw=2.2, markersize=7,
+             label="Consumo real 2025", zorder=3)
 
-    plt.tight_layout(rect=[0, 0, 1, 0.96])
+    # Sombrear zona de predicción
+    n_fut = len(idx_pred_nn)
+    todos_x  = meses_abr + meses_fut_abr[:n_fut]
+    todos_y  = list(consumo) + [None] * n_fut
+
+    # Línea de predicción — promedio de ambos modelos para mostrar UNA sola línea
+    vals_prom = [(p + n) / 2 for p, n in zip(vals_pred_poly, vals_pred_nn)]
+    x_fut_pos = list(range(len(meses_abr), len(meses_abr) + n_fut))
+
+    # Conectar el último mes real con la predicción
+    ax2.plot(
+        [len(meses_abr) - 1] + x_fut_pos,
+        [consumo[-1]] + vals_prom,
+        "o--", color="#e67e22", lw=2.2, markersize=7,
+        label="Estimación próximos meses", zorder=3
+    )
+
+    # Valores encima de los puntos de predicción
+    for xi, vp in zip(x_fut_pos, vals_prom):
+        ax2.text(xi, vp + max(consumo) * 0.04,
+                 f"{vp/1000:.0f}k L",
+                 ha="center", fontsize=9, fontweight="bold", color="#e67e22")
+
+    # Sombrear la zona futura
+    ax2.axvspan(
+        len(meses_abr) - 1 + 0.5, len(meses_abr) + n_fut - 0.5,
+        alpha=0.08, color="#e67e22", label="Período estimado"
+    )
+
+    # Etiquetas en el eje X unificadas
+    ax2.set_xticks(range(len(meses_abr) + n_fut))
+    ax2.set_xticklabels(meses_abr + meses_fut_abr[:n_fut], fontsize=8.5)
+
+    # Línea del promedio
+    ax2.axhline(
+        stats["promedio"], color="#2c3e50",
+        linestyle=":", lw=1.5, alpha=0.6,
+        label=f"Promedio 2025: {stats['promedio']:,.0f} L/mes"
+    )
+
+    ax2.set_title("¿Cuánta agua se usará los próximos meses?",
+                  fontsize=13, fontweight="bold", pad=12)
+    ax2.set_xlabel("Mes", fontsize=10)
+    ax2.set_ylabel("Litros de agua estimados", fontsize=10)
+    ax2.yaxis.set_major_formatter(
+        plt.FuncFormatter(lambda x, _: f"{int(x/1000)}k")
+    )
+    ax2.set_ylim(0, max(consumo) * 1.28)
+    ax2.legend(fontsize=8.5, loc="upper left", framealpha=0.9)
+    ax2.grid(axis="y", alpha=0.25, linestyle=":")
+    ax2.set_axisbelow(True)
+
+    plt.tight_layout()
     nombre_png = config["graficos"]["nombre_archivo"]
     plt.savefig(nombre_png, dpi=150, bbox_inches="tight")
     console.print(f"\n[green]📁 Gráfico guardado:[/green] [cyan]{nombre_png}[/cyan]")
