@@ -1,60 +1,53 @@
 {
-  "_descripcion": "Configuración — Vivienda de Alquiler, 3 pisos, Cajamarca, Perú — Año 2025",
+  "_descripcion": "Configuracion - Vivienda de Alquiler, 3 pisos, Cajamarca, Peru - 4 anos reales",
 
   "edificio": {
-    "nombre": "Vivienda de Alquiler — 3 Pisos",
+    "nombre": "Vivienda de Alquiler - 3 Pisos",
     "tipo": "Vivienda de alquiler",
     "ciudad": "Cajamarca",
     "departamento": "Cajamarca",
     "pisos": 3,
-    "apartamentos": 3,
-    "consumo_anual_real_m3": 245,
-    "consumo_anual_real_litros": 245000,
-    "anio": 2025
+    "personas": 5,
+    "anio_actual": 2025,
+    "anios_disponibles": [2022, 2023, 2024, 2025]
   },
 
   "umbrales": {
     "factor_anomalia": 1.5,
-    "consumo_bajo_litros": 5000,
-    "consumo_alto_litros": 25000,
-    "litros_por_persona_dia": 150,
-    "_nota": "Umbrales adaptados a datos mensuales. OMS: 50 L/pers/día. Perú urbano: 150–200 L/pers/día"
+    "consumo_bajo_litros": 12000,
+    "consumo_alto_litros": 20000,
+    "_nota": "Umbrales calibrados con 4 anos de datos reales. Rango real: 8000-24000 L/mes"
   },
 
   "prediccion": {
-    "dias_futuros": 3,
-    "_nota": "Meses futuros a predecir (Enero–Marzo 2026)",
-    "grado_polinomio": 3
+    "meses_futuros": 3,
+    "grado_polinomio": 2,
+    "_nota": "Grado 2 (cuadratico) es mas estable que grado 3 para extrapolar. Con 48 puntos la prediccion es confiable."
   },
 
   "clustering": {
     "num_clusters": 3,
-    "_nota": "3 clusters: meses de bajo consumo, consumo medio, meses pico"
+    "_nota": "3 clusters: consumo bajo, medio y alto segun patron mensual"
   },
 
   "red_neuronal": {
-    "epocas": 800,
+    "epocas": 1000,
     "neuronas_capa1": 64,
     "neuronas_capa2": 32
   },
 
   "alertas": {
-    "fuga_nocturna_umbral_litros": 800,
-    "_nota": "En madrugada mensual no debería superar 800 L en vivienda de alquiler normal"
+    "fuga_nocturna_umbral_litros": 800
   },
 
   "tarifa": {
-    "proveedor": "SEDACAJ — Cajamarca",
+    "proveedor": "SEDACAJ - Cajamarca",
     "cargo_fijo_soles": 3.20,
     "rangos": [
-      { "desde_m3": 0,  "hasta_m3": 8,   "precio_sol_por_m3": 0.880,
-        "_detalle": "Consumo mínimo social" },
-      { "desde_m3": 8,  "hasta_m3": 20,  "precio_sol_por_m3": 1.650,
-        "_detalle": "Consumo doméstico básico" },
-      { "desde_m3": 20, "hasta_m3": 999, "precio_sol_por_m3": 3.120,
-        "_detalle": "Consumo doméstico excedente" }
-    ],
-    "_nota": "Tarifa doméstica SEDACAJ vigente. El consumo anual de 245 m³ entra principalmente en el tramo excedente."
+      { "desde_m3": 0,  "hasta_m3": 8,   "precio_sol_por_m3": 0.880 },
+      { "desde_m3": 8,  "hasta_m3": 20,  "precio_sol_por_m3": 1.650 },
+      { "desde_m3": 20, "hasta_m3": 999, "precio_sol_por_m3": 3.120 }
+    ]
   },
 
   "graficos": {

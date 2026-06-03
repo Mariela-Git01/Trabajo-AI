@@ -1,8 +1,8 @@
 # =============================================================================
-# datos.py — Datos REALES de consumo de agua
-# Vivienda de Alquiler — 3 pisos — Cajamarca, Perú
-# Consumo anual 2025: 245 m³ = 245,000 litros
-# Fuente: Tabla de registro mensual del sistema
+# datos.py - Datos REALES de consumo de agua (4 años)
+# Vivienda de Alquiler - 3 pisos - Cajamarca, Peru
+# Habitantes: 5 personas (fijo todos los meses y anos)
+# Fuente: Reporte de consumo en L/m3 durante 4 anos
 # =============================================================================
 
 import numpy as np
@@ -10,161 +10,127 @@ import numpy as np
 np.random.seed(7)
 
 # -----------------------------------------------------------------------------
-# MESES DEL AÑO
+# CONSTANTES
 # -----------------------------------------------------------------------------
+
+PERSONAS = 5          # Habitantes fijos todos los meses y anos
+ANIOS    = [2022, 2023, 2024, 2025]
 
 meses = [
     "Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio",
-    "Julio", "Agosto", "Setiembre", "Octubre", "Noviembre", "Diciembre"
+    "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre"
 ]
 
-# Índice numérico de los meses (1–12)
-dias = list(range(1, 13))
+meses_abr = ["Ene", "Feb", "Mar", "Abr", "May", "Jun",
+             "Jul", "Ago", "Sep", "Oct", "Nov", "Dic"]
 
 # -----------------------------------------------------------------------------
-# DATOS MENSUALES — Extraídos directamente de la tabla 2025
-#
-# Columnas originales:
-#   N°PERSONAS | L/m3 | L (litros totales) | L/DÍA | L*PERSONA
-#
-# Enero     : 3 pers,  1 m³,  1000 L,   33.33 L/día,  11.11 L/pers
-# Febrero   : 7 pers,  5 m³,  5000 L,  166.67 L/día,  23.81 L/pers
-# Marzo     : 8 pers,  4 m³,  4000 L,  133.33 L/día,  16.67 L/pers
-# Abril     : 10 pers, 9 m³,  9000 L,  300.00 L/día,  30.00 L/pers
-# Mayo      : 12 pers,38 m³, 38000 L, 1266.67 L/día, 105.56 L/pers
-# Junio     : 13 pers,49 m³, 49000 L, 1633.33 L/día, 125.64 L/pers
-# Julio     : 10 pers,18 m³, 18000 L,  600.00 L/día,  60.00 L/pers
-# Agosto    : 10 pers, 8 m³,  8000 L,  266.67 L/día,  26.67 L/pers
-# Setiembre : 12 pers,17 m³, 17000 L,  566.67 L/día,  47.22 L/pers
-# Octubre   : 11 pers,25 m³, 25000 L,  833.33 L/día,  75.76 L/pers
-# Noviembre : 10 pers,38 m³, 38000 L, 1266.67 L/día, 126.67 L/pers
-# Diciembre : 10 pers,33 m³, 33000 L, 1100.00 L/día, 110.00 L/pers
+# DATOS POR ANO - directamente de la tabla de la imagen
+# Cada lista tiene 12 valores (Enero a Diciembre)
 # -----------------------------------------------------------------------------
 
-# Consumo mensual total en LITROS (una entrada por mes)
-consumo_diario = [
-    1000,   # Enero
-    5000,   # Febrero
-    4000,   # Marzo
-    9000,   # Abril
-    38000,  # Mayo
-    49000,  # Junio     ← MÁXIMO del año
-    18000,  # Julio
-    8000,   # Agosto
-    17000,  # Setiembre
-    25000,  # Octubre
-    38000,  # Noviembre
-    33000,  # Diciembre
-]
-
-# Número de ocupantes (personas) por mes
-ocupantes_por_dia = [
-    3,   # Enero
-    7,   # Febrero
-    8,   # Marzo
-    10,  # Abril
-    12,  # Mayo
-    13,  # Junio
-    10,  # Julio
-    10,  # Agosto
-    12,  # Setiembre
-    11,  # Octubre
-    10,  # Noviembre
-    10,  # Diciembre
-]
-
-# Metros cúbicos por mes (L/m3 de la tabla original)
-metros_cubicos_mes = [1, 5, 4, 9, 38, 49, 18, 8, 17, 25, 38, 33]
-
-# Litros por día por mes (L/DÍA de la tabla)
-litros_por_dia_mes = [
-    33.33, 166.67, 133.33, 300.00, 1266.67, 1633.33,
-    600.00, 266.67, 566.67, 833.33, 1266.67, 1100.00
-]
-
-# Litros por persona por mes (L*PERSONA de la tabla)
-litros_por_persona_mes = [
-    11.11, 23.81, 16.67, 30.00, 105.56, 125.64,
-    60.00, 26.67, 47.22, 75.76, 126.67, 110.00
-]
-
-# Verificación del total anual
-_total = sum(consumo_diario)
-assert _total == 245000, f"Total anual incorrecto: {_total} L (esperado 245,000 L)"
+datos_por_anio = {
+    2025: {
+        "m3"   : [12, 15, 19, 17, 17, 16, 15, 19, 13, 13, 14, 17],
+        "L"    : [12000, 15000, 19000, 17000, 17000, 16000,
+                  15000, 19000, 13000, 13000, 14000, 17000],
+        "L_dia": [400.00, 500.00, 633.33, 566.67, 566.67, 533.33,
+                  500.00, 633.33, 433.33, 433.33, 466.67, 566.67],
+    },
+    2024: {
+        "m3"   : [19, 15, 21, 16, 24, 24, 16, 12, 14, 12, 12, 12],
+        "L"    : [19000, 15000, 21000, 16000, 24000, 24000,
+                  16000, 12000, 14000, 12000, 12000, 12000],
+        "L_dia": [633.33, 500.00, 700.00, 533.33, 800.00, 800.00,
+                  533.33, 400.00, 466.67, 400.00, 400.00, 400.00],
+    },
+    2023: {
+        "m3"   : [12, 13, 11, 16, 20, 17, 20, 13, 12, 17, 12, 13],
+        "L"    : [12000, 13000, 11000, 16000, 20000, 17000,
+                  20000, 13000, 12000, 17000, 12000, 13000],
+        "L_dia": [400.00, 433.33, 366.67, 533.33, 666.67, 566.67,
+                  666.67, 433.33, 400.00, 566.67, 400.00, 433.33],
+    },
+    2022: {
+        "m3"   : [17, 19, 22, 19, 19, 20, 13, 14, 14, 8, 13, 14],
+        "L"    : [17000, 19000, 22000, 19000, 19000, 20000,
+                  13000, 14000, 14000, 8000, 13000, 14000],
+        "L_dia": [566.67, 633.33, 733.33, 633.33, 633.33, 666.67,
+                  433.33, 466.67, 466.67, 266.67, 433.33, 466.67],
+    },
+}
 
 # -----------------------------------------------------------------------------
-# CONSUMO POR FRANJA HORARIA — Estimado mensual
-# Franjas: [Madrugada 00–06h, Mañana 06–12h, Tarde 12–18h, Noche 18–24h]
-#
-# Distribución estimada para una vivienda de alquiler con múltiples pisos:
-#   Madrugada (00–06h):  5% — mínimo uso; pico = posible fuga
-#   Mañana    (06–12h): 40% — ducha, desayuno, cocina
-#   Tarde     (12–18h): 30% — almuerzo, limpieza
-#   Noche     (18–24h): 25% — cena, ducha nocturna
-#
-# Meses con pico alto (Mayo, Junio, Nov, Dic) → mañana sube al 45%
-# Meses de bajo consumo (Enero, Feb, Mar) → patrón más conservador
+# ACCESOS RAPIDOS - ano mas reciente (2025) para graficos del ano actual
+# -----------------------------------------------------------------------------
+
+consumo_diario        = datos_por_anio[2025]["L"]
+metros_cubicos_mes    = datos_por_anio[2025]["m3"]
+litros_por_dia_mes    = datos_por_anio[2025]["L_dia"]
+ocupantes_por_dia     = [PERSONAS] * 12
+dias                  = list(range(1, 13))
+
+litros_por_persona_mes = [round(l / PERSONAS, 2) for l in consumo_diario]
+
+# -----------------------------------------------------------------------------
+# SERIE HISTORICA COMPLETA - 48 puntos en orden cronologico 2022 a 2025
+# Esta es la clave para que los modelos predigan bien:
+#   - Cada punto representa un mes real con su consumo en litros
+#   - El indice lineal (1 a 48) permite al modelo ver la tendencia a lo largo del tiempo
+#   - El indice de mes (1 a 12) permite detectar patrones estacionales (cada ano)
+# -----------------------------------------------------------------------------
+
+consumo_historico = []  # Litros por mes, orden cronologico
+anio_historico    = []  # Ano de cada punto
+mes_historico     = []  # Mes (1-12) de cada punto
+
+for anio in [2022, 2023, 2024, 2025]:
+    for i, litros in enumerate(datos_por_anio[anio]["L"]):
+        consumo_historico.append(litros)
+        anio_historico.append(anio)
+        mes_historico.append(i + 1)
+
+# Indice lineal 1-48
+indice_historico = list(range(1, len(consumo_historico) + 1))
+
+# -----------------------------------------------------------------------------
+# CONSUMO POR FRANJA HORARIA - estimado (solo 2025, para analisis interno)
+# Franjas: [Madrugada 00-06h, Manana 06-12h, Tarde 12-18h, Noche 18-24h]
+# Con 5 personas fijas la distribucion es estable durante todo el ano
 # -----------------------------------------------------------------------------
 
 def generar_franja_mensual(total_litros, mes_index):
-    """
-    Estima el consumo por franja horaria para un mes dado.
-
-    Args:
-        total_litros (float): Consumo total del mes en litros.
-        mes_index (int): Índice del mes (0 = Enero, 11 = Diciembre).
-
-    Returns:
-        list: 4 valores en litros [madrugada, mañana, tarde, noche].
-    """
-    # Proporciones base
     props = np.array([0.05, 0.40, 0.30, 0.25])
-
-    # Meses de alta ocupación (Mayo, Junio, Octubre, Noviembre, Diciembre)
-    if mes_index in [4, 5, 9, 10, 11]:
-        props = np.array([0.05, 0.45, 0.30, 0.20])
-
-    # Meses de baja ocupación (Enero, Febrero, Marzo)
-    if mes_index in [0, 1, 2]:
-        props = np.array([0.04, 0.38, 0.32, 0.26])
-
-    # Ruido pequeño para realismo
     ruido = np.random.uniform(-0.01, 0.01, 4)
     props = np.clip(props + ruido, 0.02, 0.60)
     props /= props.sum()
-
     return np.round(props * total_litros, 1).tolist()
-
 
 consumo_horario = [
     generar_franja_mensual(consumo_diario[i], i)
-    for i in range(len(consumo_diario))
+    for i in range(12)
 ]
 
 # -----------------------------------------------------------------------------
-# BLOQUE DE VERIFICACIÓN (ejecutar datos.py directamente para revisar)
+# VERIFICACION - ejecutar datos.py directamente para revisar
 # -----------------------------------------------------------------------------
 
 if __name__ == "__main__":
-    total = sum(consumo_diario)
-    print("=" * 60)
-    print("  VERIFICACIÓN DE DATOS — Vivienda de Alquiler, 3 Pisos")
-    print("  Cajamarca, Perú — Año 2025")
-    print("=" * 60)
-    print(f"  Total anual        : {total:,} litros = {total/1000:.0f} m³")
-    print(f"  Total m³ (tabla)   : {sum(metros_cubicos_mes)} m³")
-    print(f"  Promedio mensual   : {total/12:,.0f} L/mes")
-    print(f"  Mes máximo         : Junio — {consumo_diario[5]:,} L ({metros_cubicos_mes[5]} m³)")
-    print(f"  Mes mínimo         : Enero — {consumo_diario[0]:,} L ({metros_cubicos_mes[0]} m³)")
-    print(f"  Max L/día (Junio)  : {litros_por_dia_mes[5]:,.2f} L/día")
-    print(f"  Max L/pers (Nov)   : {litros_por_persona_mes[10]:.2f} L/persona")
-    print("=" * 60)
-    print(f"  {'MES':<12} {'PERS':>4}  {'m³':>4}  {'LITROS':>8}  {'L/DÍA':>9}  {'L/PERS':>8}")
-    print("  " + "-" * 54)
-    for i, mes in enumerate(meses):
-        print(f"  {mes:<12} {ocupantes_por_dia[i]:>4}  {metros_cubicos_mes[i]:>4}  "
-              f"{consumo_diario[i]:>8,}  {litros_por_dia_mes[i]:>9.2f}  "
-              f"{litros_por_persona_mes[i]:>8.2f}")
-    print("  " + "-" * 54)
-    print(f"  {'TOTAL':<12} {'245':>4}  {'245':>4}  {total:>8,}")
-    print("=" * 60)
+    print("=" * 65)
+    print("  VERIFICACION - 4 anos de consumo real")
+    print("  Vivienda de Alquiler, 3 Pisos - Cajamarca, Peru")
+    print("  Habitantes: 5 personas (fijo)")
+    print("=" * 65)
+    for anio in [2022, 2023, 2024, 2025]:
+        total = sum(datos_por_anio[anio]["L"])
+        prom  = total / 12
+        maxi  = max(datos_por_anio[anio]["L"])
+        mini  = min(datos_por_anio[anio]["L"])
+        mes_m = meses[datos_por_anio[anio]["L"].index(maxi)]
+        mes_n = meses[datos_por_anio[anio]["L"].index(mini)]
+        print(f"  {anio}  ->  Total: {total:,} L  |  "
+              f"Prom: {prom:,.0f} L/mes  |  "
+              f"Max: {mes_m} {maxi:,} L  |  Min: {mes_n} {mini:,} L")
+    print("=" * 65)
+    print(f"  Total historico (48 meses): {sum(consumo_historico):,} L")
+    print("=" * 65)

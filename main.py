@@ -1,10 +1,9 @@
 # =============================================================================
-# SISTEMA INTELIGENTE DE OPTIMIZACIÓN DEL USO DE AGUA EN EDIFICACIONES
-# Versión 3.0 — Datos reales: Vivienda de Alquiler, 3 pisos — Cajamarca, Perú
-# Consumo real anual 2025: 245 m³ = 245,000 litros
-# Proveedor: SEDACAJ — Cajamarca
+# SISTEMA INTELIGENTE DE OPTIMIZACION DEL USO DE AGUA EN EDIFICACIONES
+# Version 4.0 - Datos reales 4 anos: Vivienda de Alquiler, Cajamarca, Peru
+# Habitantes: 5 personas (fijo) | Periodo: 2022-2025
 # =============================================================================
-# Instalación de dependencias:
+# Instalacion:
 #   pip install numpy matplotlib scikit-learn rich
 # =============================================================================
 
@@ -28,882 +27,580 @@ from rich.panel   import Panel
 from rich         import box
 
 from datos import (
-    consumo_diario,           # Consumo mensual en litros (12 meses)
-    dias,                     # Índices 1–12
-    ocupantes_por_dia,        # Personas por mes
-    consumo_horario,          # Franjas horarias estimadas por mes
-    meses,                    # Nombres de los meses
-    metros_cubicos_mes,       # m³ por mes
-    litros_por_dia_mes,       # L/día promedio por mes
-    litros_por_persona_mes,   # L/persona por mes
+    # Ano actual (2025)
+    consumo_diario, metros_cubicos_mes, litros_por_dia_mes,
+    litros_por_persona_mes, ocupantes_por_dia, dias,
+    consumo_horario, meses, meses_abr,
+    # Historico 4 anos (48 puntos)
+    consumo_historico, anio_historico, mes_historico, indice_historico,
+    datos_por_anio, PERSONAS, ANIOS,
 )
 
 console = Console()
 
 # =============================================================================
-# 0. CONFIGURACIÓN
+# 0. CONFIGURACION
 # =============================================================================
 
 def cargar_config(ruta="config.json"):
-    """Carga y retorna la configuración desde el archivo JSON."""
-    try:
-        with open(ruta, "r", encoding="utf-8") as f:
-            cfg = json.load(f)
-        console.print(f"[green]✔ Configuración cargada:[/green] [cyan]{ruta}[/cyan]")
-        return cfg
-    except FileNotFoundError:
-        console.print(f"[red]✘ No se encontró {ruta}[/red]")
-        raise
+    with open(ruta, "r", encoding="utf-8") as f:
+        cfg = json.load(f)
+    console.print(f"[green]Configuracion cargada:[/green] [cyan]{ruta}[/cyan]")
+    return cfg
 
 # =============================================================================
-# 1. TARIFA REAL SEDACAJ — CAJAMARCA (por tramos, aplicada mensualmente)
+# 1. TARIFA SEDACAJ - costo mensual por tramos
 # =============================================================================
 
-def calcular_costo_sedacaj(total_litros, config):
-    """
-    Calcula el costo del agua según la tarifa por tramos de SEDACAJ Cajamarca.
-
-    Tramos vigentes (doméstico):
-      0–8   m³ : S/. 0.880 / m³
-      8–20  m³ : S/. 1.650 / m³
-      20+   m³ : S/. 3.120 / m³
-      Cargo fijo mensual: S/. 3.20
-
-    Args:
-        total_litros (float): Consumo total en litros.
-        config (dict): Configuración con tramos tarifarios.
-
-    Returns:
-        float: Costo total estimado en soles (S/.).
-    """
-    total_m3 = total_litros / 1000
-    rangos   = config["tarifa"]["rangos"]
-    costo    = config["tarifa"]["cargo_fijo_soles"]
-
-    for rango in rangos:
-        desde  = rango["desde_m3"]
-        hasta  = rango["hasta_m3"]
-        precio = rango["precio_sol_por_m3"]
-        if total_m3 > desde:
-            m3_en_tramo = min(total_m3, hasta) - desde
-            costo      += m3_en_tramo * precio
-        if total_m3 <= hasta:
+def calcular_costo_sedacaj(litros, config):
+    m3     = litros / 1000
+    rangos = config["tarifa"]["rangos"]
+    costo  = config["tarifa"]["cargo_fijo_soles"]
+    for r in rangos:
+        if m3 > r["desde_m3"]:
+            costo += (min(m3, r["hasta_m3"]) - r["desde_m3"]) * r["precio_sol_por_m3"]
+        if m3 <= r["hasta_m3"]:
             break
-
     return round(costo, 2)
 
-def calcular_costo_por_mes(config):
-    """Retorna el costo SEDACAJ estimado para cada mes."""
-    return [calcular_costo_sedacaj(m3 * 1000, config) for m3 in metros_cubicos_mes]
+def costos_por_anio(config):
+    resultado = {}
+    for anio in ANIOS:
+        resultado[anio] = [
+            calcular_costo_sedacaj(l, config)
+            for l in datos_por_anio[anio]["L"]
+        ]
+    return resultado
 
 # =============================================================================
-# 2. ANÁLISIS ESTADÍSTICO ANUAL
+# 2. ESTADISTICAS - por ano y general
 # =============================================================================
 
-def analizar_datos(consumo, ocupantes, litros_persona_dia):
-    """
-    Calcula estadísticas descriptivas del consumo mensual anual.
-
-    Args:
-        consumo (list): Consumo mensual en litros (12 valores).
-        ocupantes (list): Personas por mes.
-        litros_persona_dia (float): Referencia de consumo por persona/día.
-
-    Returns:
-        dict: Estadísticas completas del año.
-    """
-    datos      = np.array(consumo)
-    ocup       = np.array(ocupantes)
-    per_capita = datos / ocup  # litros por persona por mes
-
+def estadisticas_anio(anio):
+    datos = np.array(datos_por_anio[anio]["L"])
     return {
-        "promedio"          : float(np.mean(datos)),
-        "maximo"            : float(np.max(datos)),
-        "minimo"            : float(np.min(datos)),
-        "desviacion"        : float(np.std(datos)),
-        "total"             : float(np.sum(datos)),
-        "total_m3"          : float(np.sum(datos) / 1000),
-        "per_capita_prom"   : float(np.mean(per_capita)),
-        "per_capita_max"    : float(np.max(per_capita)),
-        "per_capita_min"    : float(np.min(per_capita)),
-        "mes_maximo"        : int(np.argmax(datos)),
-        "mes_minimo"        : int(np.argmin(datos)),
-        "consumo_per_capita": per_capita.tolist(),
+        "total"    : int(np.sum(datos)),
+        "promedio" : float(np.mean(datos)),
+        "maximo"   : int(np.max(datos)),
+        "minimo"   : int(np.min(datos)),
+        "desv"     : float(np.std(datos)),
+        "mes_max"  : int(np.argmax(datos)),
+        "mes_min"  : int(np.argmin(datos)),
+    }
+
+def estadisticas_historicas():
+    h = np.array(consumo_historico)
+    return {
+        "promedio_global" : float(np.mean(h)),
+        "maximo_global"   : int(np.max(h)),
+        "minimo_global"   : int(np.min(h)),
+        "total_4_anios"   : int(np.sum(h)),
+        "tendencia"       : float(np.polyfit(range(len(h)), h, 1)[0]),
     }
 
 # =============================================================================
-# 3. ANÁLISIS POR FRANJA HORARIA — Detección de franjas críticas
+# 3. DETECCION DE ANOMALIAS - Isolation Forest sobre los 48 puntos
 # =============================================================================
 
-def analizar_franjas(consumo_horario_mes, meses_lista, umbral_nocturno):
-    """
-    Analiza el consumo en la franja de madrugada (00–06h) para cada mes.
+def detectar_anomalias(config):
+    X      = np.array(consumo_historico).reshape(-1, 1)
+    modelo = IsolationForest(contamination=0.10, random_state=42)
+    etiq   = modelo.fit_predict(X)
+    factor = config["umbrales"]["factor_anomalia"]
+    prom   = np.mean(consumo_historico)
+    umbral = prom * factor
 
-    Args:
-        consumo_horario_mes (list): Lista de [madrugada, mañana, tarde, noche] por mes.
-        meses_lista (list): Nombres de los meses.
-        umbral_nocturno (float): Litros en madrugada que disparan alerta.
-
-    Returns:
-        dict: Promedios por franja y lista de meses con alerta.
-    """
-    matriz    = np.array(consumo_horario_mes)
-    promedios = matriz.mean(axis=0).tolist()
-    alertas   = []
-
-    for i, fila in enumerate(matriz):
-        if fila[0] > umbral_nocturno:
-            alertas.append((meses_lista[i], round(fila[0], 1)))
-
-    return {
-        "promedios_franja" : promedios,
-        "fugas_nocturnas"  : alertas,
-        "matriz"           : matriz,
-    }
-
-# =============================================================================
-# 4. DETECCIÓN DE ANOMALÍAS — Isolation Forest + Umbral clásico
-# =============================================================================
-
-def detectar_anomalias_if(consumo, meses_lista):
-    """
-    Usa Isolation Forest para detectar meses con consumo inusual.
-    Con solo 12 puntos usa contamination baja para no sobre-detectar.
-
-    Returns:
-        tuple: (lista de anomalías, array de scores)
-    """
-    X         = np.array(consumo).reshape(-1, 1)
-    # Con 12 muestras, contamination ~0.15 detecta 1–2 outliers reales
-    modelo    = IsolationForest(contamination=0.15, random_state=42)
-    etiquetas = modelo.fit_predict(X)
-    scores    = modelo.decision_function(X)
-
-    anomalias = [
-        (meses_lista[i], consumo[i], round(scores[i], 4))
-        for i, e in enumerate(etiquetas) if e == -1
-    ]
-    return anomalias, scores
-
-def detectar_anomalias_umbral(consumo, meses_lista, promedio, factor):
-    """Detección clásica: meses cuyo consumo supera factor × promedio."""
-    umbral    = promedio * factor
-    anomalias = [
-        (meses_lista[i], v)
-        for i, v in enumerate(consumo) if v > umbral
-    ]
+    anomalias = []
+    for i, e in enumerate(etiq):
+        if e == -1:
+            anomalias.append({
+                "anio"  : anio_historico[i],
+                "mes"   : meses[mes_historico[i] - 1],
+                "litros": consumo_historico[i],
+                "tipo"  : "alto" if consumo_historico[i] > prom else "bajo",
+            })
     return anomalias, umbral
 
 # =============================================================================
-# 5. CLUSTERING K-MEANS — Agrupación de meses por patrón de consumo
+# 4. CLASIFICACION DEL CONSUMO
 # =============================================================================
 
-def clustering_kmeans(consumo_horario_mes, meses_lista, n_clusters):
-    """
-    Agrupa los meses en clusters según su patrón de consumo por franja.
-    Para esta vivienda se esperan 3 grupos:
-      - Meses de bajo consumo (Enero–Abril)
-      - Meses de consumo medio (Julio–Setiembre)
-      - Meses de consumo alto / pico (Mayo, Junio, Octubre–Diciembre)
-
-    Returns:
-        dict: Etiquetas, nombres de clusters y promedios.
-    """
-    X      = np.array(consumo_horario_mes)
-    scaler = StandardScaler()
-    Xs     = scaler.fit_transform(X)
-
-    km   = KMeans(n_clusters=n_clusters, random_state=42, n_init=10)
-    etiq = km.fit_predict(Xs)
-
-    totales = {}
-    for i, lbl in enumerate(etiq):
-        totales.setdefault(lbl, []).append(sum(consumo_horario_mes[i]))
-
-    prom_c  = {k: np.mean(v) for k, v in totales.items()}
-    orden   = sorted(prom_c, key=prom_c.get)
-    nombres = {
-        orden[i]: n
-        for i, n in enumerate(
-            ["Consumo bajo", "Consumo medio", "Consumo alto/pico"][:n_clusters]
-        )
-    }
-    return {"etiquetas": etiq.tolist(), "nombres": nombres, "prom_cluster": prom_c}
-
-# =============================================================================
-# 6. CLASIFICACIÓN DEL CONSUMO
-# =============================================================================
-
-def clasificar_consumo(promedio, bajo, alto):
-    if promedio < bajo:    return "BAJO"
-    elif promedio <= alto: return "NORMAL"
-    else:                  return "ALTO"
-
-def clasificar_mes(valor, bajo, alto):
+def clasificar(valor, bajo, alto):
     if valor < bajo:    return "BAJO"
     elif valor <= alto: return "NORMAL"
     else:               return "ALTO"
 
 # =============================================================================
-# 7. REGRESIÓN POLINÓMICA — Tendencia del consumo mensual
+# 5. PREDICCION - usando los 48 puntos historicos
+#
+# La logica de prediccion usa el promedio mensual de los 4 anos como base
+# y luego aplica la tendencia general (subida o bajada) para ajustar.
+# Esto es mas honesto y sensato que extrapolar una curva fuera del rango.
+#
+# Por ejemplo: para predecir Enero 2026 promedia los 4 eneros reales
+# (2022, 2023, 2024, 2025) y aplica la tendencia de los 48 meses.
 # =============================================================================
 
-def predecir_polinomica(indices, consumo, grado, meses_futuros):
-    """
-    Ajusta una curva polinómica al historial anual y la proyecta.
-    Útil para capturar la curva de crecimiento de mitad de año.
+def predecir_proximos_meses(config):
+    n_fut  = config["prediccion"]["meses_futuros"]
+    grado  = config["prediccion"]["grado_polinomio"]
 
-    Args:
-        indices (list): Índices 1–12.
-        grado (int): Grado del polinomio.
-        meses_futuros (int): Cuántos meses futuros predecir.
+    # --- Modelo 1: promedio mensual + tendencia lineal ---
+    # Para cada mes futuro (Ene, Feb, Mar 2026):
+    #   base = promedio de ese mismo mes en los 4 anos anteriores
+    #   ajuste = tendencia anual * avance de tiempo
+    tendencia_anual = estadisticas_historicas()["tendencia"] * 12
+    predicciones_prom = []
+    meses_pred_nombres = []
 
-    Returns:
-        tuple: (modelo, índices predichos, valores predichos)
-    """
-    X      = np.array(indices).reshape(-1, 1)
-    y      = np.array(consumo)
+    for i in range(n_fut):
+        mes_idx = i          # 0=Ene, 1=Feb, 2=Mar
+        valores_ese_mes = [
+            datos_por_anio[a]["L"][mes_idx] for a in ANIOS
+        ]
+        base    = np.mean(valores_ese_mes)
+        ajuste  = tendencia_anual * (i + 1) / 12
+        pred    = max(base + ajuste, 0)
+        predicciones_prom.append(round(pred))
+        meses_pred_nombres.append(f"{meses[mes_idx]} 2026")
+
+    # --- Modelo 2: regresion polinomica sobre los 48 puntos ---
+    X      = np.array(indice_historico).reshape(-1, 1)
+    y      = np.array(consumo_historico)
     modelo = make_pipeline(PolynomialFeatures(degree=grado), LinearRegression())
     modelo.fit(X, y)
+    idx_fut   = np.arange(49, 49 + n_fut).reshape(-1, 1)
+    vals_poly = np.clip(modelo.predict(idx_fut), 5000, 30000).tolist()
 
-    ultimo  = max(indices)
-    X_pred  = np.arange(ultimo + 1, ultimo + meses_futuros + 1).reshape(-1, 1)
-    vals    = np.clip(modelo.predict(X_pred), 0, None)
+    # --- Modelo 3: red neuronal MLP ---
+    # Entradas: (indice_lineal, mes_del_anio) -> consumo
+    X_nn   = np.column_stack([indice_historico, mes_historico])
+    scaler = StandardScaler()
+    Xs     = scaler.fit_transform(X_nn)
 
-    return modelo, X_pred.flatten(), vals
-
-# =============================================================================
-# 8. RED NEURONAL MLP — Predicción con ocupantes como variable
-# =============================================================================
-
-def predecir_red_neuronal(indices, consumo, ocupantes, cfg_nn, meses_futuros,
-                          ocup_futuros=None):
-    """
-    Red neuronal que aprende la relación (mes, ocupantes) → consumo.
-
-    Args:
-        cfg_nn (dict): Configuración de la red.
-        ocup_futuros (list): Ocupantes estimados para meses futuros.
-
-    Returns:
-        tuple: (modelo, índices predichos, valores predichos)
-    """
-    X  = np.column_stack([indices, ocupantes])
-    y  = np.array(consumo)
-
-    sx = StandardScaler(); sy = StandardScaler()
-    Xs = sx.fit_transform(X)
-    ys = sy.fit_transform(y.reshape(-1, 1)).ravel()
+    sy     = StandardScaler()
+    ys     = sy.fit_transform(y.reshape(-1, 1)).ravel()
 
     mlp = MLPRegressor(
-        hidden_layer_sizes=(cfg_nn["neuronas_capa1"], cfg_nn["neuronas_capa2"]),
-        activation="relu",
-        max_iter=cfg_nn["epocas"],
-        random_state=42,
-        early_stopping=True,
-        validation_fraction=0.15,
+        hidden_layer_sizes=(64, 32), activation="relu",
+        max_iter=1000, random_state=42,
+        early_stopping=True, validation_fraction=0.15
     )
     mlp.fit(Xs, ys)
 
-    ultimo    = max(indices)
-    idx_pred  = np.arange(ultimo + 1, ultimo + meses_futuros + 1)
+    idx_fut_lineal = list(range(49, 49 + n_fut))
+    meses_fut_idx  = [i + 1 for i in range(n_fut)]   # 1=Ene, 2=Feb, 3=Mar
+    Xf     = np.column_stack([idx_fut_lineal, meses_fut_idx])
+    Xfs    = scaler.transform(Xf)
+    vals_nn = np.clip(
+        sy.inverse_transform(mlp.predict(Xfs).reshape(-1, 1)).ravel(),
+        5000, 30000
+    ).tolist()
 
-    if ocup_futuros is None:
-        ocup_futuros = [int(np.mean(ocupantes))] * meses_futuros
-
-    Xf   = np.column_stack([idx_pred, ocup_futuros])
-    Xfs  = sx.transform(Xf)
-    vals = np.clip(
-        sy.inverse_transform(mlp.predict(Xfs).reshape(-1, 1)).ravel(), 0, None
-    )
-    return mlp, idx_pred, vals
+    return {
+        "nombres"      : meses_pred_nombres,
+        "prom_hist"    : predicciones_prom,
+        "polinomica"   : [round(v) for v in vals_poly],
+        "red_neuronal" : [round(v) for v in vals_nn],
+    }
 
 # =============================================================================
-# 9. RECOMENDACIONES AUTOMÁTICAS
+# 6. CLUSTERING - agrupar los 48 meses por nivel de consumo
 # =============================================================================
 
-def generar_recomendaciones(stats, clasificacion, anomalias_if, fugas,
-                            config, costos_mes):
-    """
-    Genera recomendaciones contextualizadas para la vivienda de alquiler
-    en Cajamarca, considerando la tarifa SEDACAJ y el patrón anual.
-    """
-    recs     = []
-    ref      = config["umbrales"]["litros_por_persona_dia"]
-    costo_t  = sum(costos_mes)
-    mes_max  = meses[stats["mes_maximo"]]
-    mes_min  = meses[stats["mes_minimo"]]
+def clustering(config):
+    X      = np.array(consumo_historico).reshape(-1, 1)
+    scaler = StandardScaler()
+    Xs     = scaler.fit_transform(X)
+    km     = KMeans(n_clusters=config["clustering"]["num_clusters"],
+                    random_state=42, n_init=10)
+    etiq   = km.fit_predict(Xs)
 
-    # Clasificación general
-    if clasificacion == "BAJO":
-        recs.append(("green", "✅ Consumo anual BAJO. Excelente gestión del agua."))
-    elif clasificacion == "NORMAL":
-        recs.append(("cyan",  "✅ Consumo anual dentro del rango NORMAL para la edificación."))
-        recs.append(("cyan",  "   → Instale reductores de caudal en grifos y duchas de cada piso."))
+    # Ordenar clusters: 0=bajo, 1=medio, 2=alto segun su promedio
+    centros = km.cluster_centers_.ravel()
+    orden   = np.argsort(centros)
+    mapa    = {orden[i]: i for i in range(len(orden))}
+    etiq    = [mapa[e] for e in etiq]
+
+    nombres_cluster = ["Consumo bajo", "Consumo normal", "Consumo alto"]
+    return etiq, nombres_cluster
+
+# =============================================================================
+# 7. RECOMENDACIONES
+# =============================================================================
+
+def generar_recomendaciones(stats_actual, anomalias, pred, costos, config):
+    bajo = config["umbrales"]["consumo_bajo_litros"]
+    alto = config["umbrales"]["consumo_alto_litros"]
+    recs = []
+
+    # Clasificacion del consumo 2025
+    cls = clasificar(stats_actual["promedio"], bajo, alto)
+    if cls == "BAJO":
+        recs.append(("green", "Consumo 2025 BAJO. Excelente uso del agua en la vivienda."))
+    elif cls == "NORMAL":
+        recs.append(("cyan", "Consumo 2025 dentro del rango NORMAL para 5 personas."))
+        recs.append(("cyan", "  -> Instale reductores de caudal para mejorar aun mas."))
     else:
-        recs.append(("red",   "⚠️  Consumo anual ALTO. Supera el rango esperado."))
-        recs.append(("red",   f"   → Mes pico: {mes_max} con {stats['maximo']:,.0f} L."))
-        recs.append(("red",   "   → Revise instalaciones, tuberías y posibles fugas en los 3 pisos."))
+        recs.append(("red", "Consumo 2025 ALTO. Supera el rango esperado para 5 personas."))
+        recs.append(("red", f"  -> Mes mas alto: {meses[stats_actual['mes_max']]} con {stats_actual['maximo']:,} L."))
 
-    # Per cápita
-    pc = stats["per_capita_prom"]
-    recs.append(("yellow", f"💧 Consumo per cápita promedio mensual: {pc:,.1f} L/persona"))
-    recs.append(("yellow",
-        f"   → Mes de mayor consumo: {mes_max} | Mes de menor consumo: {mes_min}"))
-
-    # Anomalías Isolation Forest
-    if anomalias_if:
-        recs.append(("red",
-            f"🔴 Isolation Forest detectó {len(anomalias_if)} mes(es) anómalo(s):"))
-        for mes_n, valor, score in anomalias_if:
-            recs.append(("red",
-                f"   → {mes_n}: {valor:,} L — Revisar ocupación y posibles fugas."))
+    # Tendencia historica
+    tend = estadisticas_historicas()["tendencia"]
+    if tend > 0:
+        recs.append(("yellow", f"Tendencia: el consumo sube ~{abs(tend*12):,.0f} L/anio en promedio. Vigilar."))
+    elif tend < 0:
+        recs.append(("green", f"Tendencia: el consumo baja ~{abs(tend*12):,.0f} L/anio. Buena senal."))
     else:
-        recs.append(("green", "🔴 Sin meses anómalos detectados por Isolation Forest. ✔"))
+        recs.append(("cyan", "Tendencia estable en los 4 anos analizados."))
 
-    # Fugas nocturnas
-    if fugas:
-        recs.append(("magenta",
-            f"🌙 Alerta nocturna detectada en {len(fugas)} mes(es):"))
-        for mes_n, litros in fugas:
-            recs.append(("magenta",
-                f"   → {mes_n}: {litros:,.1f} L en madrugada"))
-        recs.append(("magenta",
-            "   → Verifique llaves de paso en los 3 pisos durante la madrugada."))
+    # Anomalias
+    if anomalias:
+        recs.append(("red", f"Se detectaron {len(anomalias)} mes(es) con consumo inusual en los 4 anos:"))
+        for a in anomalias:
+            recs.append(("red", f"  -> {a['mes']} {a['anio']}: {a['litros']:,} L ({a['tipo']})"))
     else:
-        recs.append(("green", "🌙 Sin alertas nocturnas detectadas. ✔"))
+        recs.append(("green", "Sin meses con consumo inusual detectado en los 4 anos."))
 
-    # Costo anual
-    recs.append(("yellow",
-        f"💰 Costo anual estimado SEDACAJ: S/. {costo_t:.2f}"))
-    recs.append(("yellow",
-        f"   → Promedio mensual: S/. {costo_t/12:.2f}/mes"))
-    recs.append(("yellow",
-        "   → Instalar medidores por piso podría identificar el piso de mayor consumo."))
+    # Costo
+    costo_2025 = sum(costos[2025])
+    recs.append(("yellow", f"Costo anual estimado SEDACAJ 2025: S/. {costo_2025:.2f}"))
+    recs.append(("yellow", f"  -> Promedio mensual: S/. {costo_2025/12:.2f}/mes"))
 
-    # Tendencia
-    pico_meses = ["Mayo", "Junio", "Noviembre", "Diciembre"]
-    recs.append(("cyan",
-        f"📈 Los meses de mayor consumo son: {', '.join(pico_meses)}."))
-    recs.append(("cyan",
-        "   → Programar revisión de instalaciones antes de estos meses."))
+    # Prediccion
+    recs.append(("cyan", "Estimacion proximos 3 meses (Ene-Mar 2026) basada en 4 anos reales:"))
+    for nombre, val in zip(pred["nombres"], pred["prom_hist"]):
+        cls_p = clasificar(val, bajo, alto)
+        recs.append(("cyan", f"  -> {nombre}: ~{val:,} L ({cls_p})"))
 
     return recs
 
 # =============================================================================
-# 10. VISUALIZACIÓN — 2 gráficos simples para cualquier público
+# 8. VISUALIZACION - 2 graficos claros para cualquier publico
 # =============================================================================
 
-def visualizar_completo(indices, consumo, stats, umbral, anomalias_umbral,
-                        anomalias_if, cluster_info, consumo_horario_mes,
-                        idx_pred_poly, vals_pred_poly,
-                        idx_pred_nn, vals_pred_nn,
-                        config, costos_mes):
-    """
-    Genera 2 gráficos claros y fáciles de entender para cualquier persona,
-    sin términos técnicos ni datos confusos.
-
-    Gráfico 1 — Barras de consumo mensual:
-      Muestra cuánta agua se usó cada mes, con colores simples
-      (verde = poco, naranja = mucho) y el valor exacto encima de cada barra.
-
-    Gráfico 2 — Estimación de los próximos 3 meses:
-      Continúa la línea del año 2025 y muestra qué se espera consumir
-      en enero, febrero y marzo de 2026.
-    """
-    meses_abr = ["Ene", "Feb", "Mar", "Abr", "May", "Jun",
-                 "Jul", "Ago", "Set", "Oct", "Nov", "Dic"]
-    meses_fut_abr = ["Ene 26", "Feb 26", "Mar 26"]
+def visualizar(stats_actual, anomalias, pred, costos, config):
+    bajo     = config["umbrales"]["consumo_bajo_litros"]
+    alto     = config["umbrales"]["consumo_alto_litros"]
     nombre   = config["edificio"]["nombre"]
     ciudad   = config["edificio"]["ciudad"]
-    anio     = config["edificio"]["anio"]
-    costo_t  = sum(costos_mes)
-    meses_if = {m for m, _, _ in anomalias_if}
+    personas = config["edificio"]["personas"]
+    costo_25 = sum(costos[2025])
+
+    meses_pred_abr = ["Ene 26", "Feb 26", "Mar 26"]
+    anomalias_set  = {(a["anio"], a["mes"]) for a in anomalias}
 
     fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(16, 7))
     fig.suptitle(
-        f"{nombre}  —  {ciudad}, Perú  |  Año {anio}\n"
-        f"Agua consumida en el año: {stats['total_m3']:.0f} m³  "
-        f"(equivale a {stats['total_m3']*1000:,.0f} litros)  •  "
-        f"Costo anual estimado: S/. {costo_t:.2f}",
+        f"{nombre}  -  {ciudad}, Peru  |  {personas} personas\n"
+        f"Consumo 2025: {stats_actual['total']:,} L  "
+        f"({stats_actual['total']//1000} m3)  |  "
+        f"Costo anual estimado: S/. {costo_25:.2f}",
         fontsize=12, fontweight="bold"
     )
 
     # ------------------------------------------------------------------
-    # GRÁFICO 1 — ¿Cuánta agua se usó cada mes?
+    # GRAFICO 1 - Cuanta agua se uso cada mes en 2025?
+    # Barras por mes con colores intuitivos y valor encima
     # ------------------------------------------------------------------
-    # Color: verde si está por debajo del promedio, naranja si está por encima
-    colores = [
-        "#e74c3c" if mes_n in meses_if           # rojo = mes inusual
-        else "#e67e22" if v > stats["promedio"]  # naranja = más de lo normal
-        else "#2ecc71"                            # verde = dentro de lo normal
-        for mes_n, v in zip(meses, consumo)
-    ]
+    colores_barra = []
+    for i, (v, mes_n) in enumerate(zip(consumo_diario, meses)):
+        if (2025, mes_n) in anomalias_set:
+            colores_barra.append("#e74c3c")   # rojo: mes inusual
+        elif v > alto:
+            colores_barra.append("#e67e22")   # naranja: consumo alto
+        elif v < bajo:
+            colores_barra.append("#2ecc71")   # verde: consumo bajo
+        else:
+            colores_barra.append("#3498db")   # azul: consumo normal
 
-    barras = ax1.bar(meses_abr, consumo, color=colores,
+    barras = ax1.bar(meses_abr, consumo_diario, color=colores_barra,
                      edgecolor="white", linewidth=0.8, zorder=2)
 
-    # Valor en litros encima de cada barra (redondeado, fácil de leer)
-    for barra, valor, mes_n in zip(barras, consumo, meses):
-        etiqueta = f"{valor//1000}k L"  # ej: "49k L"
-        color_txt = "#c0392b" if mes_n in meses_if else "#2c3e50"
+    # Valor en litros encima de cada barra
+    for barra, valor, mes_n in zip(barras, consumo_diario, meses):
+        color_txt = "#c0392b" if (2025, mes_n) in anomalias_set else "#2c3e50"
         ax1.text(
             barra.get_x() + barra.get_width() / 2,
-            barra.get_height() + max(consumo) * 0.015,
-            etiqueta,
+            barra.get_height() + max(consumo_diario) * 0.015,
+            f"{valor//1000}k L",
             ha="center", va="bottom",
             fontsize=9, fontweight="bold", color=color_txt
         )
-        # Señalar meses inusuales con una etiqueta de alerta
-        if mes_n in meses_if:
+        if (2025, mes_n) in anomalias_set:
             ax1.text(
                 barra.get_x() + barra.get_width() / 2,
-                barra.get_height() + max(consumo) * 0.085,
-                "⚠ Mes inusual",
-                ha="center", va="bottom",
-                fontsize=7.5, color="#c0392b", fontstyle="italic"
+                barra.get_height() + max(consumo_diario) * 0.08,
+                "Mes inusual",
+                ha="center", fontsize=7.5, color="#c0392b", fontstyle="italic"
             )
 
-    # Línea del promedio anual
-    ax1.axhline(
-        stats["promedio"], color="#2c3e50",
-        linestyle="--", lw=1.8, zorder=3,
-        label=f"Promedio del año: {stats['promedio']:,.0f} L/mes"
-    )
+    # Linea del promedio
+    ax1.axhline(stats_actual["promedio"], color="#2c3e50", linestyle="--",
+                lw=1.8, zorder=3,
+                label=f"Promedio 2025: {stats_actual['promedio']:,.0f} L/mes")
 
-    # Leyenda con texto simple
+    # Leyenda en lenguaje simple
     leyenda = [
-        mpatches.Patch(color="#2ecc71", label="Consumo normal (por debajo del promedio)"),
-        mpatches.Patch(color="#e67e22", label="Consumo alto (por encima del promedio)"),
-        mpatches.Patch(color="#e74c3c", label="Mes inusual — revisar posibles fugas"),
+        mpatches.Patch(color="#2ecc71", label="Consumo bajo"),
+        mpatches.Patch(color="#3498db", label="Consumo normal"),
+        mpatches.Patch(color="#e67e22", label="Consumo alto"),
+        mpatches.Patch(color="#e74c3c", label="Mes inusual - revisar"),
     ]
-    ax1.legend(handles=leyenda, fontsize=8.5, loc="upper left",
-               framealpha=0.9)
+    ax1.legend(handles=leyenda, fontsize=8.5, loc="upper right", framealpha=0.9)
+    hdl, lbl = ax1.get_legend_handles_labels()
+    ax1.legend(handles=leyenda + hdl, labels=[p.get_label() for p in leyenda] + lbl,
+               fontsize=8, loc="upper right", framealpha=0.9)
 
-    ax1.set_title("¿Cuánta agua se usó cada mes?",
+    ax1.set_title("Cuanta agua se uso cada mes en 2025?",
                   fontsize=13, fontweight="bold", pad=12)
-    ax1.set_xlabel("Mes del año", fontsize=10)
-    ax1.set_ylabel("Litros de agua usados", fontsize=10)
-    ax1.yaxis.set_major_formatter(
-        plt.FuncFormatter(lambda x, _: f"{int(x/1000)}k")
-    )
-    ax1.set_ylim(0, max(consumo) * 1.28)
+    ax1.set_xlabel("Mes del ano", fontsize=10)
+    ax1.set_ylabel("Litros de agua", fontsize=10)
+    ax1.yaxis.set_major_formatter(plt.FuncFormatter(lambda x, _: f"{int(x/1000)}k"))
+    ax1.set_ylim(0, max(consumo_diario) * 1.30)
     ax1.grid(axis="y", alpha=0.25, linestyle=":")
     ax1.set_axisbelow(True)
 
     # ------------------------------------------------------------------
-    # GRÁFICO 2 — ¿Cuánta agua se usará los próximos meses?
+    # GRAFICO 2 - Comparacion de los 4 anos + estimacion 2026
+    # Una linea por cada ano para ver la evolucion real,
+    # y una zona sombreada para los 3 meses estimados de 2026.
     # ------------------------------------------------------------------
-    # Historial 2025
-    ax2.plot(meses_abr, consumo, "o-",
-             color="#3498db", lw=2.2, markersize=7,
-             label="Consumo real 2025", zorder=3)
+    colores_anio = {2022: "#95a5a6", 2023: "#3498db", 2024: "#e67e22", 2025: "#2c3e50"}
+    estilos      = {2022: "--",       2023: "--",       2024: "--",       2025: "-"}
+    grosores     = {2022: 1.2,        2023: 1.2,        2024: 1.2,        2025: 2.2}
 
-    # Sombrear zona de predicción
-    n_fut = len(idx_pred_nn)
-    todos_x  = meses_abr + meses_fut_abr[:n_fut]
-    todos_y  = list(consumo) + [None] * n_fut
+    for anio in ANIOS:
+        y_vals = datos_por_anio[anio]["L"]
+        ax2.plot(meses_abr, y_vals,
+                 marker="o", markersize=4 if anio != 2025 else 6,
+                 color=colores_anio[anio],
+                 linestyle=estilos[anio],
+                 linewidth=grosores[anio],
+                 label=str(anio),
+                 zorder=3 if anio == 2025 else 2,
+                 alpha=0.7 if anio != 2025 else 1.0)
 
-    # Línea de predicción — promedio de ambos modelos para mostrar UNA sola línea
-    vals_prom = [(p + n) / 2 for p, n in zip(vals_pred_poly, vals_pred_nn)]
-    x_fut_pos = list(range(len(meses_abr), len(meses_abr) + n_fut))
+    # Estimacion 2026 - usando promedio historico (mas confiable)
+    # Se conecta desde el ultimo punto real de 2025 (Diciembre)
+    x_conexion  = [len(meses_abr) - 1] + [len(meses_abr), len(meses_abr)+1, len(meses_abr)+2]
+    y_conexion  = [consumo_diario[-1]] + pred["prom_hist"]
 
-    # Conectar el último mes real con la predicción
-    ax2.plot(
-        [len(meses_abr) - 1] + x_fut_pos,
-        [consumo[-1]] + vals_prom,
-        "o--", color="#e67e22", lw=2.2, markersize=7,
-        label="Estimación próximos meses", zorder=3
-    )
+    ax2.plot(x_conexion, y_conexion,
+             "o--", color="#8e44ad", lw=2, markersize=7,
+             label="Estimacion Ene-Mar 2026", zorder=4)
 
-    # Valores encima de los puntos de predicción
-    for xi, vp in zip(x_fut_pos, vals_prom):
-        ax2.text(xi, vp + max(consumo) * 0.04,
-                 f"{vp/1000:.0f}k L",
-                 ha="center", fontsize=9, fontweight="bold", color="#e67e22")
+    # Valor encima de cada punto estimado
+    for xi, vp, nombre_m in zip(
+        x_conexion[1:], pred["prom_hist"], meses_pred_abr
+    ):
+        ax2.text(xi, vp + max(consumo_historico) * 0.04,
+                 f"{vp//1000}k L",
+                 ha="center", fontsize=9, fontweight="bold", color="#8e44ad")
 
-    # Sombrear la zona futura
-    ax2.axvspan(
-        len(meses_abr) - 1 + 0.5, len(meses_abr) + n_fut - 0.5,
-        alpha=0.08, color="#e67e22", label="Período estimado"
-    )
+    # Zona sombreada de prediccion
+    ax2.axvspan(len(meses_abr) - 0.5, len(meses_abr) + 2.5,
+                alpha=0.07, color="#8e44ad")
+    ax2.text(len(meses_abr) + 1, max(consumo_historico) * 0.95,
+             "Estimacion\n2026", ha="center", fontsize=8,
+             color="#8e44ad", fontstyle="italic")
 
-    # Etiquetas en el eje X unificadas
-    ax2.set_xticks(range(len(meses_abr) + n_fut))
-    ax2.set_xticklabels(meses_abr + meses_fut_abr[:n_fut], fontsize=8.5)
+    # Eje X con todos los meses + prediccion
+    todos_x = list(range(len(meses_abr) + 3))
+    ax2.set_xticks(todos_x)
+    ax2.set_xticklabels(meses_abr + meses_pred_abr, fontsize=8)
 
-    # Línea del promedio
-    ax2.axhline(
-        stats["promedio"], color="#2c3e50",
-        linestyle=":", lw=1.5, alpha=0.6,
-        label=f"Promedio 2025: {stats['promedio']:,.0f} L/mes"
-    )
-
-    ax2.set_title("¿Cuánta agua se usará los próximos meses?",
+    ax2.set_title("Consumo por ano (2022-2025) y estimacion 2026",
                   fontsize=13, fontweight="bold", pad=12)
     ax2.set_xlabel("Mes", fontsize=10)
-    ax2.set_ylabel("Litros de agua estimados", fontsize=10)
-    ax2.yaxis.set_major_formatter(
-        plt.FuncFormatter(lambda x, _: f"{int(x/1000)}k")
-    )
-    ax2.set_ylim(0, max(consumo) * 1.28)
-    ax2.legend(fontsize=8.5, loc="upper left", framealpha=0.9)
+    ax2.set_ylabel("Litros de agua", fontsize=10)
+    ax2.yaxis.set_major_formatter(plt.FuncFormatter(lambda x, _: f"{int(x/1000)}k"))
+    ax2.set_ylim(0, max(consumo_historico) * 1.30)
+    ax2.legend(fontsize=9, loc="upper right", framealpha=0.9)
     ax2.grid(axis="y", alpha=0.25, linestyle=":")
     ax2.set_axisbelow(True)
 
     plt.tight_layout()
     nombre_png = config["graficos"]["nombre_archivo"]
     plt.savefig(nombre_png, dpi=150, bbox_inches="tight")
-    console.print(f"\n[green]📁 Gráfico guardado:[/green] [cyan]{nombre_png}[/cyan]")
+    console.print(f"\n[green]Grafico guardado:[/green] [cyan]{nombre_png}[/cyan]")
     plt.show()
 
 # =============================================================================
-# 11. SALIDA ENRIQUECIDA CON RICH
+# 9. SALIDA EN CONSOLA CON RICH
 # =============================================================================
 
-def imprimir_encabezado(config, stats, costos_mes):
-    ed      = config["edificio"]
-    costo_t = sum(costos_mes)
+def imprimir_encabezado(config, stats_actual, costos):
+    ed = config["edificio"]
     console.print(Panel(
-        f"[bold white]Edificación :[/bold white] [cyan]{ed['nombre']}[/cyan]\n"
-        f"[bold white]Ciudad      :[/bold white] [cyan]{ed['ciudad']} — {ed['departamento']}, Perú[/cyan]\n"
-        f"[bold white]Tipo        :[/bold white] {ed['tipo']}  |  "
-        f"[bold white]Pisos:[/bold white] {ed['pisos']}\n"
-        f"[bold white]Período     :[/bold white] Año [yellow]{ed['anio']}[/yellow]\n"
-        f"[bold white]Consumo anual real:[/bold white] "
-        f"[yellow]{ed['consumo_anual_real_m3']} m³  "
-        f"({ed['consumo_anual_real_litros']:,} litros)[/yellow]\n"
-        f"[bold white]Proveedor   :[/bold white] [magenta]{config['tarifa']['proveedor']}[/magenta]  |  "
-        f"[bold white]Costo anual estimado:[/bold white] [green]S/. {costo_t:.2f}[/green]\n"
-        f"[bold white]Promedio mensual:[/bold white] [cyan]{stats['promedio']:,.0f} L/mes[/cyan]  |  "
-        f"[bold white]Per cápita prom.:[/bold white] [cyan]{stats['per_capita_prom']:,.1f} L/persona/mes[/cyan]",
-        title=(
-            "[bold yellow]💧 SISTEMA INTELIGENTE DE OPTIMIZACIÓN DEL USO DE AGUA"
-            " — v3.0  |  Cajamarca, Perú[/bold yellow]"
-        ),
+        f"[bold white]Edificacion :[/bold white] [cyan]{ed['nombre']}[/cyan]\n"
+        f"[bold white]Ciudad      :[/bold white] [cyan]{ed['ciudad']}, Peru[/cyan]\n"
+        f"[bold white]Habitantes  :[/bold white] {ed['personas']} personas (fijo)\n"
+        f"[bold white]Periodo     :[/bold white] [yellow]2022 - 2025  (48 meses reales)[/yellow]\n"
+        f"[bold white]Consumo 2025:[/bold white] "
+        f"[yellow]{stats_actual['total']:,} L  ({stats_actual['total']//1000} m3)[/yellow]  |  "
+        f"[bold white]Costo anual:[/bold white] [green]S/. {sum(costos[2025]):.2f}[/green]",
+        title="[bold yellow]SISTEMA DE OPTIMIZACION DEL USO DE AGUA - v4.0[/bold yellow]",
         border_style="blue", padding=(1, 3)
     ))
 
-def imprimir_tabla_anual(config, costos_mes):
-    """Tabla con los 12 meses tal como aparece en la imagen original."""
-    console.rule("[bold blue]📋 TABLA DE CONSUMO ANUAL 2025[/bold blue]")
-    t = Table(box=box.ROUNDED, header_style="bold cyan", min_width=82)
-    t.add_column("MES",        style="bold white", min_width=11)
-    t.add_column("N°PERS",     justify="right",    min_width=7)
-    t.add_column("m³",         justify="right",    min_width=5)
-    t.add_column("LITROS",     justify="right",    min_width=8)
-    t.add_column("L/DÍA",      justify="right",    min_width=9)
-    t.add_column("L/PERSONA",  justify="right",    min_width=10)
-    t.add_column("COSTO S/.",  justify="right",    min_width=10)
-
-    total_pers = sum(ocupantes_por_dia)
-    total_m3   = sum(metros_cubicos_mes)
-    total_l    = sum(consumo_diario)
-    total_s    = sum(costos_mes)
+def imprimir_tabla_4_anios(costos):
+    console.rule("[bold blue]TABLA DE CONSUMO - 4 ANOS (litros por mes)[/bold blue]")
+    t = Table(box=box.ROUNDED, header_style="bold cyan")
+    t.add_column("Mes",         style="bold white", min_width=12)
+    t.add_column("2022",        justify="right", min_width=9)
+    t.add_column("2023",        justify="right", min_width=9)
+    t.add_column("2024",        justify="right", min_width=9)
+    t.add_column("2025",        justify="right", min_width=9)
+    t.add_column("Promedio",    justify="right", min_width=10)
 
     for i, mes_n in enumerate(meses):
-        # Color según nivel de consumo
-        v = consumo_diario[i]
-        bajo = config["umbrales"]["consumo_bajo_litros"]
-        alto = config["umbrales"]["consumo_alto_litros"]
-        if v >= alto:   col = "red"
-        elif v < bajo:  col = "green"
-        else:           col = "cyan"
-
+        vals   = [datos_por_anio[a]["L"][i] for a in ANIOS]
+        prom_m = int(np.mean(vals))
+        maxi   = max(vals)
         t.add_row(
             mes_n,
-            str(ocupantes_por_dia[i]),
-            str(metros_cubicos_mes[i]),
-            f"[{col}]{consumo_diario[i]:,}[/{col}]",
-            f"{litros_por_dia_mes[i]:,.2f}",
-            f"{litros_por_persona_mes[i]:,.2f}",
-            f"S/. {costos_mes[i]:.2f}",
+            *[f"[red]{v:,}[/red]" if v == maxi else f"{v:,}" for v in vals],
+            f"[yellow]{prom_m:,}[/yellow]",
         )
 
+    # Fila de totales
+    tots = [sum(datos_por_anio[a]["L"]) for a in ANIOS]
     t.add_row(
-        "[bold]TOTAL AÑO[/bold]",
-        f"[bold]{total_pers}[/bold]",
-        f"[bold]{total_m3}[/bold]",
-        f"[bold yellow]{total_l:,}[/bold yellow]",
-        "—",
-        "—",
-        f"[bold green]S/. {total_s:.2f}[/bold green]",
+        "[bold]TOTAL[/bold]",
+        *[f"[bold]{t_:,}[/bold]" for t_ in tots],
+        f"[bold yellow]{int(np.mean(tots)):,}[/bold yellow]",
     )
     console.print(t)
 
-def imprimir_estadisticas(stats, config):
-    console.rule("[bold blue]📊 [1] ANÁLISIS ESTADÍSTICO ANUAL[/bold blue]")
-    ref = config["umbrales"]["litros_por_persona_dia"]
+def imprimir_estadisticas_comparadas(costos):
+    console.rule("[bold blue]ESTADISTICAS COMPARADAS POR ANO[/bold blue]")
+    t = Table(box=box.ROUNDED, header_style="bold cyan")
+    t.add_column("Ano",         justify="center", min_width=6)
+    t.add_column("Total L",     justify="right",  min_width=10)
+    t.add_column("Prom/mes",    justify="right",  min_width=10)
+    t.add_column("Mes max",     justify="center", min_width=15)
+    t.add_column("Mes min",     justify="center", min_width=15)
+    t.add_column("Costo S/.",   justify="right",  min_width=10)
 
-    t = Table(box=box.ROUNDED, header_style="bold cyan", min_width=60)
-    t.add_column("Métrica",              style="bold white", min_width=35)
-    t.add_column("Valor",                justify="right",    min_width=23)
-    t.add_row("Período analizado",       "12 meses (Año 2025)")
-    t.add_row("Consumo total anual",
-              f"[bold]{stats['total']:,.0f} L  =  {stats['total_m3']:.0f} m³[/bold]")
-    t.add_row("Promedio mensual",
-              f"[cyan]{stats['promedio']:,.1f} L/mes[/cyan]")
-    t.add_row("Mes de mayor consumo",
-              f"[red]{meses[stats['mes_maximo']]} — {stats['maximo']:,.0f} L[/red]")
-    t.add_row("Mes de menor consumo",
-              f"[green]{meses[stats['mes_minimo']]} — {stats['minimo']:,.0f} L[/green]")
-    t.add_row("Desviación estándar",
-              f"{stats['desviacion']:,.1f} L")
-    t.add_row("─" * 33,                "─" * 21)
-    t.add_row("Per cápita prom. mensual",
-              f"[yellow]{stats['per_capita_prom']:,.1f} L/persona/mes[/yellow]")
-    t.add_row("Per cápita máximo",
-              f"{stats['per_capita_max']:,.1f} L/persona/mes")
-    t.add_row("Per cápita mínimo",
-              f"{stats['per_capita_min']:,.1f} L/persona/mes")
-    t.add_row(f"Ref. OMS/Perú ({ref} L/pers/día)",
-              f"= {ref * 30:,} L/persona/mes estimado")
-    console.print(t)
-
-def imprimir_tarifa(stats, costos_mes, config):
-    console.rule("[bold yellow]💰 [2] DESGLOSE TARIFARIO ANUAL — SEDACAJ CAJAMARCA[/bold yellow]")
-    total_s = sum(costos_mes)
-
-    t = Table(box=box.SIMPLE_HEAVY, header_style="bold yellow")
-    t.add_column("Mes",         min_width=12)
-    t.add_column("m³",          justify="right", min_width=6)
-    t.add_column("Costo S/.",   justify="right", min_width=10)
-    t.add_column("Tramo ppal.", min_width=20)
-
-    for i, mes_n in enumerate(meses):
-        m3   = metros_cubicos_mes[i]
-        costo = costos_mes[i]
-        if m3 <= 8:   tramo = "0–8 m³ (social)"
-        elif m3 <= 20: tramo = "8–20 m³ (básico)"
-        else:          tramo = "20+ m³ (excedente)"
-        t.add_row(mes_n, str(m3), f"S/. {costo:.2f}", tramo)
-
-    t.add_row("─" * 10, "─" * 4, "─" * 8, "─" * 18)
-    t.add_row(
-        "[bold]TOTAL ANUAL[/bold]",
-        f"[bold]{sum(metros_cubicos_mes)}[/bold]",
-        f"[bold green]S/. {total_s:.2f}[/bold green]",
-        f"Prom. S/. {total_s/12:.2f}/mes",
-    )
-    console.print(t)
-
-def imprimir_anomalias(anomalias_if, anomalias_umb, umbral, factor, stats):
-    console.rule("[bold red]🔍 [3] DETECCIÓN DE ANOMALÍAS[/bold red]")
-
-    console.print(f"\n  [bold]Isolation Forest[/bold] — {len(anomalias_if)} mes(es) anómalo(s):")
-    if anomalias_if:
-        t = Table(box=box.SIMPLE, header_style="bold red")
-        t.add_column("Mes",             justify="center")
-        t.add_column("Consumo",         justify="right")
-        t.add_column("Score IA",        justify="right")
-        t.add_column("Exceso vs prom.", justify="right")
-        for mes_n, valor, score in anomalias_if:
-            exceso = valor - stats["promedio"]
-            t.add_row(mes_n,
-                      f"[red]{valor:,} L[/red]",
-                      f"{score:.4f}",
-                      f"+{exceso:,.0f} L")
-        console.print(t)
-    else:
-        console.print("  [green]Sin meses anómalos detectados. ✔[/green]")
-
-    console.print(
-        f"\n  [bold]Umbral clásico[/bold] "
-        f"(×{factor} = {umbral:,.0f} L) — {len(anomalias_umb)} mes(es):"
-    )
-    for mes_n, valor in anomalias_umb:
-        console.print(f"    ⚠  {mes_n}: [red]{valor:,} L[/red]")
-    if not anomalias_umb:
-        console.print("  [green]Ningún mes supera el umbral ×1.5. ✔[/green]")
-
-def imprimir_franjas(res_franjas, umbral_noch):
-    console.rule("[bold magenta]🕐 [4] ANÁLISIS POR FRANJA HORARIA (promedio mensual)[/bold magenta]")
-    nombres = ["Madrugada 00–06h", "Mañana 06–12h", "Tarde 12–18h", "Noche 18–24h"]
-    obs     = [
-        "Consumo mínimo. Alerta si supera umbral (posible fuga).",
-        "Pico principal: ducha, desayuno, cocina.",
-        "Almuerzo, limpieza de habitaciones.",
-        "Cena, ducha nocturna.",
-    ]
-    total_p = sum(res_franjas["promedios_franja"])
-
-    t = Table(box=box.ROUNDED, header_style="bold magenta")
-    t.add_column("Franja",            min_width=20)
-    t.add_column("Promedio L/mes",    justify="right", min_width=14)
-    t.add_column("% del mes",         justify="right", min_width=9)
-    t.add_column("Observación",       min_width=42)
-
-    for nombre, prom, ob in zip(nombres, res_franjas["promedios_franja"], obs):
-        pct   = prom / total_p * 100
-        color = "red" if "Madrugada" in nombre and prom > umbral_noch else "white"
-        t.add_row(nombre, f"[{color}]{prom:,.1f}[/{color}]", f"{pct:.1f}%", ob)
-    console.print(t)
-
-    fugas = res_franjas["fugas_nocturnas"]
-    if fugas:
-        console.print(f"\n  [bold red]🌙 Alertas nocturnas ({len(fugas)} mes(es)):[/bold red]")
-        for mes_n, litros in fugas:
-            console.print(
-                f"    → {mes_n}: [red]{litros:,.1f} L[/red] en madrugada "
-                f"(umbral: {umbral_noch:,} L)"
-            )
-        console.print(
-            "  [magenta]   → Revisar llaves de paso y tuberías en cada piso.[/magenta]"
-        )
-    else:
-        console.print(
-            f"\n  [green]🌙 Sin alertas nocturnas. "
-            f"Consumo en madrugada dentro del umbral ({umbral_noch:,} L). ✔[/green]"
-        )
-
-def imprimir_clustering(cluster_info, indices, consumo_mes, n_clusters):
-    console.rule("[bold green]🔵 [5] CLUSTERING K-MEANS — Agrupación de Meses[/bold green]")
-    etiq    = cluster_info["etiquetas"]
-    nombres = cluster_info["nombres"]
-
-    t = Table(box=box.ROUNDED, header_style="bold green")
-    t.add_column("Cluster",        min_width=22)
-    t.add_column("Meses",          min_width=42)
-    t.add_column("Prom. consumo",  justify="right")
-    for k in sorted(set(etiq)):
-        meses_k  = [meses[i]       for i, e in enumerate(etiq) if e == k]
-        prom_k   = np.mean([consumo_mes[i] for i, e in enumerate(etiq) if e == k])
-        nombre   = nombres.get(k, f"Grupo {k}")
+    for anio in ANIOS:
+        s = estadisticas_anio(anio)
         t.add_row(
-            f"[bold]{nombre}[/bold]",
-            ", ".join(meses_k),
-            f"{prom_k:,.0f} L",
+            str(anio),
+            f"{s['total']:,}",
+            f"{s['promedio']:,.0f}",
+            f"{meses[s['mes_max']]} ({s['maximo']:,} L)",
+            f"{meses[s['mes_min']]} ({s['minimo']:,} L)",
+            f"S/. {sum(costos[anio]):.2f}",
         )
+
+    hist = estadisticas_historicas()
+    tend_str = (f"+{hist['tendencia']*12:,.0f} L/anio"
+                if hist["tendencia"] >= 0
+                else f"{hist['tendencia']*12:,.0f} L/anio")
+    console.print(t)
+    console.print(f"  [yellow]Tendencia 4 anos: {tend_str}[/yellow]  |  "
+                  f"[cyan]Total historico: {hist['total_4_anios']:,} L "
+                  f"({hist['total_4_anios']//1000} m3)[/cyan]")
+
+def imprimir_anomalias(anomalias, umbral):
+    console.rule("[bold red]DETECCION DE MESES INUSUALES (Isolation Forest)[/bold red]")
+    if not anomalias:
+        console.print("[green]Sin meses inusuales en los 4 anos analizados.[/green]")
+        return
+    t = Table(box=box.SIMPLE, header_style="bold red")
+    t.add_column("Ano",    justify="center")
+    t.add_column("Mes",    justify="center")
+    t.add_column("Litros", justify="right")
+    t.add_column("Tipo",   justify="center")
+    for a in anomalias:
+        color = "red" if a["tipo"] == "alto" else "cyan"
+        t.add_row(str(a["anio"]), a["mes"],
+                  f"[{color}]{a['litros']:,}[/{color}]", a["tipo"].upper())
     console.print(t)
 
-def imprimir_predicciones(idx_poly, vals_poly, idx_nn, vals_nn, grado, config):
-    console.rule("[bold cyan]🤖 [6] PREDICCIONES CON IA — Próximos 3 meses (2026)[/bold cyan]")
+def imprimir_prediccion(pred, config):
+    console.rule("[bold cyan]ESTIMACION - Enero, Febrero y Marzo 2026[/bold cyan]")
     bajo = config["umbrales"]["consumo_bajo_litros"]
     alto = config["umbrales"]["consumo_alto_litros"]
-    oc   = config["red_neuronal"]
-    meses_pred = ["Enero 2026", "Febrero 2026", "Marzo 2026"]
-
-    console.print(f"\n  [bold magenta]Regresión Polinómica[/bold magenta] — grado {grado}:")
-    t1 = Table(box=box.SIMPLE, header_style="bold magenta")
-    t1.add_column("Mes",            min_width=14)
-    t1.add_column("Litros est.",    justify="right")
-    t1.add_column("m³ est.",        justify="right")
-    t1.add_column("Categoría")
-    for i, (idx, v) in enumerate(zip(idx_poly, vals_poly)):
-        cat   = clasificar_mes(v, bajo, alto)
-        color = {"BAJO": "green", "NORMAL": "cyan", "ALTO": "red"}.get(cat, "white")
-        nombre_m = meses_pred[i] if i < len(meses_pred) else f"Mes {idx}"
-        t1.add_row(nombre_m, f"{v:,.0f} L", f"{v/1000:.2f} m³",
-                   f"[{color}]{cat}[/{color}]")
-    console.print(t1)
 
     console.print(
-        f"\n  [bold green]Red Neuronal MLP[/bold green] — "
-        f"capas ({oc['neuronas_capa1']}→{oc['neuronas_capa2']} neuronas, "
-        f"{oc['epocas']} épocas):"
+        "\n  [dim]Metodo: promedio de los mismos meses en los 4 anos reales "
+        "+ tendencia historica.[/dim]\n"
+        "  [dim]Este metodo es el mas confiable porque se basa en patrones "
+        "reales observados.[/dim]\n"
     )
-    t2 = Table(box=box.SIMPLE, header_style="bold green")
-    t2.add_column("Mes",            min_width=14)
-    t2.add_column("Litros est.",    justify="right")
-    t2.add_column("m³ est.",        justify="right")
-    t2.add_column("Categoría")
-    for i, (idx, v) in enumerate(zip(idx_nn, vals_nn)):
-        cat   = clasificar_mes(v, bajo, alto)
-        color = {"BAJO": "green", "NORMAL": "cyan", "ALTO": "red"}.get(cat, "white")
-        nombre_m = meses_pred[i] if i < len(meses_pred) else f"Mes {idx}"
-        t2.add_row(nombre_m, f"{v:,.0f} L", f"{v/1000:.2f} m³",
-                   f"[{color}]{cat}[/{color}]")
-    console.print(t2)
+    t = Table(box=box.ROUNDED, header_style="bold cyan")
+    t.add_column("Mes estimado",    min_width=16)
+    t.add_column("Litros est.",     justify="right")
+    t.add_column("m3 est.",         justify="right")
+    t.add_column("Nivel")
+    t.add_column("Base del calculo")
 
-def imprimir_recomendaciones(recomendaciones):
-    console.rule("[bold yellow]💡 [7] RECOMENDACIONES[/bold yellow]")
-    for color, msg in recomendaciones:
+    for i, (nombre_m, val) in enumerate(zip(pred["nombres"], pred["prom_hist"])):
+        cls   = clasificar(val, bajo, alto)
+        color = {"BAJO": "green", "NORMAL": "cyan", "ALTO": "red"}[cls]
+        # Mostrar los valores reales de ese mes en cada ano
+        vals_reales = [datos_por_anio[a]["L"][i] for a in ANIOS]
+        base_str = "  |  ".join(
+            f"{a}: {v//1000}k" for a, v in zip(ANIOS, vals_reales)
+        )
+        t.add_row(
+            nombre_m,
+            f"{val:,} L",
+            f"{val/1000:.1f}",
+            f"[{color}]{cls}[/{color}]",
+            base_str,
+        )
+    console.print(t)
+
+def imprimir_recomendaciones(recs):
+    console.rule("[bold yellow]RECOMENDACIONES[/bold yellow]")
+    for color, msg in recs:
         console.print(f"  [{color}]{msg}[/{color}]")
 
 # =============================================================================
-# FUNCIÓN PRINCIPAL
+# FUNCION PRINCIPAL
 # =============================================================================
 
 def main():
     config = cargar_config("config.json")
 
-    factor       = config["umbrales"]["factor_anomalia"]
-    bajo         = config["umbrales"]["consumo_bajo_litros"]
-    alto         = config["umbrales"]["consumo_alto_litros"]
-    ref_persona  = config["umbrales"]["litros_por_persona_dia"]
-    meses_fut    = config["prediccion"]["dias_futuros"]   # meses futuros a predecir
-    grado_poly   = config["prediccion"]["grado_polinomio"]
-    n_clusters   = config["clustering"]["num_clusters"]
-    umbral_noch  = config["alertas"]["fuga_nocturna_umbral_litros"]
+    # Calcular costos para los 4 anos
+    costos = costos_por_anio(config)
 
-    # ── Estadísticas ────────────────────────────────────────────────────────
-    stats = analizar_datos(consumo_diario, ocupantes_por_dia, ref_persona)
+    # Estadisticas del ano actual
+    stats_actual = estadisticas_anio(2025)
 
-    # ── Costos SEDACAJ por mes ───────────────────────────────────────────────
-    costos_mes = calcular_costo_por_mes(config)
+    # Encabezado
+    imprimir_encabezado(config, stats_actual, costos)
 
-    # ── Encabezado ───────────────────────────────────────────────────────────
-    imprimir_encabezado(config, stats, costos_mes)
+    # Tabla comparativa 4 anos
+    imprimir_tabla_4_anios(costos)
 
-    # ── Tabla anual completa (fiel a la imagen) ───────────────────────────────
-    imprimir_tabla_anual(config, costos_mes)
+    # Estadisticas comparadas
+    imprimir_estadisticas_comparadas(costos)
 
-    # [1] Estadísticas
-    imprimir_estadisticas(stats, config)
+    # Anomalias sobre los 48 puntos
+    anomalias, umbral = detectar_anomalias(config)
+    imprimir_anomalias(anomalias, umbral)
 
-    # [2] Tarifa desglosada
-    imprimir_tarifa(stats, costos_mes, config)
+    # Prediccion proximos 3 meses
+    pred = predecir_proximos_meses(config)
+    imprimir_prediccion(pred, config)
 
-    # [3] Anomalías
-    anomalias_if, _        = detectar_anomalias_if(consumo_diario, meses)
-    anomalias_umb, umbral  = detectar_anomalias_umbral(
-        consumo_diario, meses, stats["promedio"], factor
-    )
-    imprimir_anomalias(anomalias_if, anomalias_umb, umbral, factor, stats)
-
-    # [4] Franjas horarias
-    res_franjas = analizar_franjas(consumo_horario, meses, umbral_noch)
-    imprimir_franjas(res_franjas, umbral_noch)
-
-    # [5] Clustering
-    cluster_info = clustering_kmeans(consumo_horario, meses, n_clusters)
-    imprimir_clustering(cluster_info, dias, consumo_diario, n_clusters)
-
-    # [6] Predicciones
-    _, idx_poly, vals_poly = predecir_polinomica(
-        dias, consumo_diario, grado_poly, meses_fut
-    )
-    _, idx_nn, vals_nn = predecir_red_neuronal(
-        dias, consumo_diario, ocupantes_por_dia,
-        config["red_neuronal"], meses_fut
-    )
-    imprimir_predicciones(idx_poly, vals_poly, idx_nn, vals_nn, grado_poly, config)
-
-    # [7] Recomendaciones
-    clasificacion = clasificar_consumo(stats["promedio"], bajo, alto)
-    recs = generar_recomendaciones(
-        stats, clasificacion, anomalias_if,
-        res_franjas["fugas_nocturnas"], config, costos_mes
-    )
+    # Recomendaciones
+    recs = generar_recomendaciones(stats_actual, anomalias, pred, costos, config)
     imprimir_recomendaciones(recs)
 
-    # [8] Gráfico
-    console.rule("[bold blue]📈 [8] GENERANDO GRÁFICO[/bold blue]")
-    visualizar_completo(
-        dias, consumo_diario, stats,
-        umbral, anomalias_umb, anomalias_if,
-        cluster_info, consumo_horario,
-        idx_poly, vals_poly,
-        idx_nn, vals_nn,
-        config, costos_mes,
-    )
+    # Graficos
+    console.rule("[bold blue]GENERANDO GRAFICOS[/bold blue]")
+    visualizar(stats_actual, anomalias, pred, costos, config)
 
     console.print(Panel(
-        f"[bold green]✔ Análisis completado — "
-        f"Vivienda de Alquiler, 3 Pisos — Cajamarca, Perú[/bold green]\n"
-        f"Consumo anual: {stats['total_m3']:.0f} m³  •  "
-        f"Costo anual SEDACAJ: S/. {sum(costos_mes):.2f}  •  "
-        f"Promedio mensual: {stats['promedio']:,.0f} L/mes",
+        f"[bold green]Analisis completado - {config['edificio']['nombre']}[/bold green]\n"
+        f"48 meses analizados (2022-2025)  |  "
+        f"Costo 2025: S/. {sum(costos[2025]):.2f}",
         border_style="green"
     ))
 
